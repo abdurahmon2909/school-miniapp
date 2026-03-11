@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 import gspread
@@ -52,6 +54,8 @@ def weekday_uz() -> str:
 
 
 class SheetsDB:
+    CACHE_TTL_SECONDS = 20
+
     def __init__(self) -> None:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -74,6 +78,9 @@ class SheetsDB:
         self.poll_answers_ws = self.spreadsheet.worksheet("poll_answers")
         self.teacher_feedback_ws = self.spreadsheet.worksheet("teacher_feedback")
 
+        self._cache: dict[str, dict] = {}
+        self._lock = Lock()
+
     @staticmethod
     def _safe_int(value, default=0) -> int:
         try:
@@ -81,8 +88,30 @@ class SheetsDB:
         except Exception:
             return default
 
-    def _next_id(self, worksheet, column_name: str) -> int:
+    def _get_cached_records(self, cache_key: str, worksheet) -> list[dict]:
+        now_ts = time.time()
+
+        with self._lock:
+            cached = self._cache.get(cache_key)
+            if cached and now_ts - cached["ts"] < self.CACHE_TTL_SECONDS:
+                return cached["rows"]
+
         rows = worksheet.get_all_records()
+
+        with self._lock:
+            self._cache[cache_key] = {
+                "ts": now_ts,
+                "rows": rows,
+            }
+
+        return rows
+
+    def _invalidate_cache(self, *cache_keys: str) -> None:
+        with self._lock:
+            for key in cache_keys:
+                self._cache.pop(key, None)
+
+    def _next_id_from_rows(self, rows: list[dict], column_name: str) -> int:
         max_id = 0
         for row in rows:
             try:
@@ -91,17 +120,36 @@ class SheetsDB:
                 continue
         return max_id + 1
 
+    def get_users_rows(self) -> list[dict]:
+        return self._get_cached_records("users", self.users_ws)
+
+    def get_schedule_rows(self) -> list[dict]:
+        return self._get_cached_records("schedule", self.schedule_ws)
+
+    def get_poll_sessions_rows(self) -> list[dict]:
+        return self._get_cached_records("poll_sessions", self.poll_sessions_ws)
+
+    def get_poll_answers_rows(self) -> list[dict]:
+        return self._get_cached_records("poll_answers", self.poll_answers_ws)
+
+    def get_teacher_feedback_rows(self) -> list[dict]:
+        return self._get_cached_records("teacher_feedback", self.teacher_feedback_ws)
+
     def get_user_by_telegram_id(self, telegram_id: int) -> dict | None:
-        rows = self.users_ws.get_all_records()
+        rows = self.get_users_rows()
+        tg_id_str = str(telegram_id)
+
         for row in rows:
-            if str(row.get("telegram_id", "")).strip() == str(telegram_id):
+            if str(row.get("telegram_id", "")).strip() == tg_id_str:
                 return row
         return None
 
     def get_today_lessons_for_class(self, class_name: str) -> list[dict]:
         target_day = weekday_uz()
-        rows = self.schedule_ws.get_all_records()
+        rows = self.get_schedule_rows()
         result: list[dict] = []
+
+        class_name = class_name.strip()
 
         for row in rows:
             if str(row.get("class_name", "")).strip() != class_name:
@@ -133,10 +181,13 @@ class SheetsDB:
         subject_name: str,
         lesson_number: int,
     ) -> dict | None:
-        rows = self.poll_sessions_ws.get_all_records()
+        rows = self.get_poll_sessions_rows()
+        tg_id_str = str(telegram_id)
+        subject_name = subject_name.strip()
+
         for row in rows:
             if (
-                str(row.get("telegram_id", "")).strip() == str(telegram_id)
+                str(row.get("telegram_id", "")).strip() == tg_id_str
                 and str(row.get("poll_date", "")).strip() == poll_date
                 and str(row.get("subject_name", "")).strip() == subject_name
                 and self._safe_int(row.get("lesson_number", 0)) == lesson_number
@@ -165,7 +216,9 @@ class SheetsDB:
         if existing:
             return self._safe_int(existing.get("poll_id", 0))
 
-        poll_id = self._next_id(self.poll_sessions_ws, "poll_id")
+        rows = self.get_poll_sessions_rows()
+        poll_id = self._next_id_from_rows(rows, "poll_id")
+
         self.poll_sessions_ws.append_row(
             [
                 poll_id,
@@ -183,17 +236,22 @@ class SheetsDB:
             ],
             value_input_option="USER_ENTERED",
         )
+
+        self._invalidate_cache("poll_sessions")
         return poll_id
 
     def get_answers_for_poll(self, poll_id: int, telegram_id: int) -> list[dict]:
-        rows = self.poll_answers_ws.get_all_records()
+        rows = self.get_poll_answers_rows()
         result: list[dict] = []
+        tg_id_str = str(telegram_id)
+
         for row in rows:
             if (
                 self._safe_int(row.get("poll_id", 0)) == poll_id
-                and str(row.get("telegram_id", "")).strip() == str(telegram_id)
+                and str(row.get("telegram_id", "")).strip() == tg_id_str
             ):
                 result.append(row)
+
         return result
 
     def has_answer_for_teacher(
@@ -203,6 +261,8 @@ class SheetsDB:
         teacher_name: str,
     ) -> bool:
         rows = self.get_answers_for_poll(poll_id, telegram_id)
+        teacher_name = teacher_name.strip()
+
         for row in rows:
             if str(row.get("chosen_teacher", "")).strip() == teacher_name:
                 return True
@@ -219,7 +279,8 @@ class SheetsDB:
         anonymous_comment: str,
         opened_at: str,
     ) -> int:
-        answer_id = self._next_id(self.poll_answers_ws, "answer_id")
+        rows = self.get_poll_answers_rows()
+        answer_id = self._next_id_from_rows(rows, "answer_id")
         answered_at = now_str()
 
         try:
@@ -246,6 +307,8 @@ class SheetsDB:
             ],
             value_input_option="USER_ENTERED",
         )
+
+        self._invalidate_cache("poll_answers")
         return answer_id
 
     def append_teacher_feedback(
@@ -255,7 +318,9 @@ class SheetsDB:
         score_value: int,
         anonymous_comment: str,
     ) -> int:
-        feedback_id = self._next_id(self.teacher_feedback_ws, "feedback_id")
+        rows = self.get_teacher_feedback_rows()
+        feedback_id = self._next_id_from_rows(rows, "feedback_id")
+
         self.teacher_feedback_ws.append_row(
             [
                 feedback_id,
@@ -267,6 +332,8 @@ class SheetsDB:
             ],
             value_input_option="USER_ENTERED",
         )
+
+        self._invalidate_cache("teacher_feedback")
         return feedback_id
 
 
@@ -284,12 +351,8 @@ app = FastAPI(title="School MiniApp API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://school-miniapp-production-c830.up.railway.app",
-        "https://t.me",
-        "https://web.telegram.org",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -440,7 +503,10 @@ def submit_rating(payload: SubmitRatingRequest):
     )
 
     if db.has_answer_for_teacher(poll_id, payload.telegram_id, payload.teacher_name):
-        raise HTTPException(status_code=400, detail="This teacher is already rated for this lesson today")
+        raise HTTPException(
+            status_code=400,
+            detail="This teacher is already rated for this lesson today",
+        )
 
     answer_id = db.append_poll_answer(
         poll_id=poll_id,
@@ -470,4 +536,3 @@ def submit_rating(payload: SubmitRatingRequest):
         "rated": True,
         "message": "Baholash muvaffaqiyatli yuborildi",
     }
-
