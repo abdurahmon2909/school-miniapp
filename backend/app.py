@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import gspread
-from fastapi import FastAPI, HTTPException
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2.service_account import Credentials
 from pydantic import BaseModel, Field
 
 
-SHEET_NAME = "School MiniApp"
+GOOGLE_CREDS = os.getenv("GOOGLE_CREDS", "").strip()
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "").strip()
+
+if not GOOGLE_CREDS:
+    raise ValueError("GOOGLE_CREDS topilmadi")
+
+if not GOOGLE_SHEET_ID:
+    raise ValueError("GOOGLE_SHEET_ID topilmadi")
+
+
 TZ = ZoneInfo("Asia/Tashkent")
 
 WEEKDAY_MAP = {
@@ -42,19 +52,21 @@ def weekday_uz() -> str:
 
 
 class SheetsDB:
-    def __init__(self, sheet_name: str) -> None:
+    def __init__(self) -> None:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
         ]
 
-        credentials = Credentials.from_service_account_file(
-            "service_account.json",
+        creds_dict = json.loads(GOOGLE_CREDS)
+
+        credentials = Credentials.from_service_account_info(
+            creds_dict,
             scopes=scopes,
         )
 
         client = gspread.authorize(credentials)
-        self.spreadsheet = client.open(sheet_name)
+        self.spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
 
         self.users_ws = self.spreadsheet.worksheet("users")
         self.schedule_ws = self.spreadsheet.worksheet("schedule")
@@ -62,7 +74,6 @@ class SheetsDB:
         self.poll_answers_ws = self.spreadsheet.worksheet("poll_answers")
         self.teacher_feedback_ws = self.spreadsheet.worksheet("teacher_feedback")
 
-    # ---------- generic ----------
     @staticmethod
     def _safe_int(value, default=0) -> int:
         try:
@@ -80,7 +91,6 @@ class SheetsDB:
                 continue
         return max_id + 1
 
-    # ---------- users ----------
     def get_user_by_telegram_id(self, telegram_id: int) -> dict | None:
         rows = self.users_ws.get_all_records()
         for row in rows:
@@ -88,7 +98,6 @@ class SheetsDB:
                 return row
         return None
 
-    # ---------- schedule ----------
     def get_today_lessons_for_class(self, class_name: str) -> list[dict]:
         target_day = weekday_uz()
         rows = self.schedule_ws.get_all_records()
@@ -116,10 +125,6 @@ class SheetsDB:
 
         result.sort(key=lambda x: x["lesson_number"])
         return result
-
-    # ---------- poll_sessions ----------
-    def get_poll_sessions(self) -> list[dict]:
-        return self.poll_sessions_ws.get_all_records()
 
     def find_poll_session(
         self,
@@ -150,6 +155,7 @@ class SheetsDB:
         lesson_number: int,
     ) -> int:
         poll_date = today_date_str()
+
         existing = self.find_poll_session(
             telegram_id=telegram_id,
             poll_date=poll_date,
@@ -179,10 +185,6 @@ class SheetsDB:
         )
         return poll_id
 
-    # ---------- poll_answers ----------
-    def get_poll_answers(self) -> list[dict]:
-        return self.poll_answers_ws.get_all_records()
-
     def get_answers_for_poll(self, poll_id: int, telegram_id: int) -> list[dict]:
         rows = self.poll_answers_ws.get_all_records()
         result: list[dict] = []
@@ -193,9 +195,6 @@ class SheetsDB:
             ):
                 result.append(row)
         return result
-
-    def has_any_answer_for_poll(self, poll_id: int, telegram_id: int) -> bool:
-        return len(self.get_answers_for_poll(poll_id, telegram_id)) > 0
 
     def has_answer_for_teacher(
         self,
@@ -249,7 +248,6 @@ class SheetsDB:
         )
         return answer_id
 
-    # ---------- teacher_feedback ----------
     def append_teacher_feedback(
         self,
         poll_id: int,
@@ -272,7 +270,7 @@ class SheetsDB:
         return feedback_id
 
 
-db = SheetsDB(SHEET_NAME)
+db = SheetsDB()
 
 app = FastAPI(title="School MiniApp API")
 
@@ -436,8 +434,6 @@ def submit_rating(payload: SubmitRatingRequest):
         anonymous_comment=payload.anonymous_comment.strip(),
     )
 
-    # По твоему правилу:
-    # оценка хотя бы одного учителя = предмет считается завершённым
     return {
         "ok": True,
         "answer_id": answer_id,

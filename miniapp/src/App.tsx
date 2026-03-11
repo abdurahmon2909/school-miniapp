@@ -33,7 +33,7 @@ declare global {
   }
 }
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "school-miniapp-production-c830.up.railway.app";
 
 export default function App() {
   const [tgUser, setTgUser] = useState<TgUser | null>(null);
