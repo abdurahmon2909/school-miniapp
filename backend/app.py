@@ -270,7 +270,15 @@ class SheetsDB:
         return feedback_id
 
 
-db = SheetsDB()
+db_instance: SheetsDB | None = None
+
+
+def get_db() -> SheetsDB:
+    global db_instance
+    if db_instance is None:
+        db_instance = SheetsDB()
+    return db_instance
+
 
 app = FastAPI(title="School MiniApp API")
 
@@ -302,8 +310,20 @@ def health():
     return {"ok": True, "time": now_str()}
 
 
+@app.get("/health-db")
+def health_db():
+    try:
+        db = get_db()
+        _ = db.users_ws.title
+        return {"ok": True, "db": True, "time": now_str()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+
 @app.post("/today-lessons")
 def today_lessons(payload: TodayLessonsRequest):
+    db = get_db()
+
     user = db.get_user_by_telegram_id(payload.telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -371,6 +391,8 @@ def today_lessons(payload: TodayLessonsRequest):
 
 @app.post("/submit-rating")
 def submit_rating(payload: SubmitRatingRequest):
+    db = get_db()
+
     user = db.get_user_by_telegram_id(payload.telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
