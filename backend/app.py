@@ -58,7 +58,7 @@ class SheetsDB:
             "https://www.googleapis.com/auth/drive",
         ]
 
-        creds_dict = json.loads(GOOGLE_CREDS)
+        creds_dict = json.loads(GOOGLE_CREDS.replace("\\n", "\n"))
 
         credentials = Credentials.from_service_account_info(
             creds_dict,
@@ -284,7 +284,11 @@ app = FastAPI(title="School MiniApp API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://school-miniapp-production-c830.up.railway.app",
+        "https://t.me",
+        "https://web.telegram.org",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
