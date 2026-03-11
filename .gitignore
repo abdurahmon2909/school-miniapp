@@ -1,0 +1,8 @@
+.venv/
+.env
+bot/.env
+backend/.env
+miniapp/.env
+
+bot/service_account.json
+backend/service_account.json
