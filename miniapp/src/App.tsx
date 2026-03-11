@@ -45,10 +45,12 @@ export default function App() {
   const [comment, setComment] = useState<string>("");
   const [openedAt, setOpenedAt] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [errorText, setErrorText] = useState("");
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (!tg) {
+      setErrorText("Telegram WebApp topilmadi");
       setLoading(false);
       return;
     }
@@ -60,6 +62,7 @@ export default function App() {
     if (user) {
       setTgUser(user);
     } else {
+      setErrorText("Telegram user topilmadi");
       setLoading(false);
     }
   }, []);
@@ -75,18 +78,21 @@ export default function App() {
       body: JSON.stringify({ telegram_id: tgUser.id }),
     })
       .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || "API error");
+          throw new Error(data.detail || `API error ${res.status}`);
         }
-        return res.json() as Promise<TodayLessonsResponse>;
+
+        return data as TodayLessonsResponse;
       })
       .then((data) => {
         setLessons(data.lessons || []);
+        setErrorText("");
       })
       .catch((err) => {
         console.error(err);
-        alert("Bugungi darslarni yuklab bo‘lmadi");
+        setErrorText(err.message || "Noma’lum xatolik");
       })
       .finally(() => {
         setLoading(false);
@@ -135,10 +141,10 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.detail || "Submit error");
+        throw new Error(data.detail || `Submit error ${res.status}`);
       }
 
       setLessons((prev) =>
@@ -163,22 +169,21 @@ export default function App() {
   };
 
   const greeting = useMemo(() => {
-    if (!tgUser) return "O‘quvchi";
-    return tgUser.first_name || "O‘quvchi";
+    if (!tgUser) return "Foydalanuvchi";
+    return tgUser.first_name || "Foydalanuvchi";
   }, [tgUser]);
 
   if (loading) {
-    return (
-      <div style={{ padding: 20, fontFamily: "sans-serif" }}>
-        Yuklanmoqda...
-      </div>
-    );
+    return <div style={{ padding: 20, fontFamily: "sans-serif" }}>Yuklanmoqda...</div>;
   }
 
-  if (!tgUser) {
+  if (errorText) {
     return (
-      <div style={{ padding: 20, fontFamily: "sans-serif" }}>
-        Telegram orqali ochilmagan
+      <div style={{ padding: 20, fontFamily: "sans-serif", background: "#f4f8ff", minHeight: "100vh" }}>
+        <div style={{ background: "white", borderRadius: 16, padding: 16, boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}>
+          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Xatolik</div>
+          <div style={{ color: "#334155" }}>{errorText}</div>
+        </div>
       </div>
     );
   }
@@ -310,9 +315,7 @@ export default function App() {
               style={{ width: "100%", marginTop: 8 }}
             />
 
-            <div style={{ marginTop: 6, fontWeight: 700 }}>
-              {score} ball
-            </div>
+            <div style={{ marginTop: 6, fontWeight: 700 }}>{score} ball</div>
 
             <div style={{ marginTop: 16, fontSize: 14, color: "#475569" }}>
               Anonim izoh (ixtiyoriy)
