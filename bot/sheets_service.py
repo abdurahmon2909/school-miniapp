@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime
 from typing import Any
 
@@ -14,8 +16,14 @@ class SheetsService:
             "https://www.googleapis.com/auth/drive",
         ]
 
-        credentials = Credentials.from_service_account_file(
-            "service_account.json",
+        google_creds = os.getenv("GOOGLE_CREDS", "").strip()
+        if not google_creds:
+            raise ValueError("GOOGLE_CREDS topilmadi")
+
+        creds_dict = json.loads(google_creds)
+
+        credentials = Credentials.from_service_account_info(
+            creds_dict,
             scopes=scopes,
         )
 
