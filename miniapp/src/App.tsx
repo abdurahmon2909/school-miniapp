@@ -33,7 +33,7 @@ declare global {
   }
 }
 
-const API_BASE = "school-miniapp-production-c830.up.railway.app";
+const API_BASE = "https://school-miniapp-production-c830.up.railway.app";
 
 export default function App() {
   const [tgUser, setTgUser] = useState<TgUser | null>(null);
