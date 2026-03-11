@@ -3,10 +3,10 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from .config import load_config
-from .handlers_start import build_start_router
-from .poll_scheduler import PollScheduler
-from .sheets_service import SheetsService
+from config import load_config
+from handlers_start import build_start_router
+from poll_scheduler import PollScheduler
+from sheets_service import SheetsService
 
 
 async def main() -> None:
