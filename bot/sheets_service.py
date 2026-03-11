@@ -128,7 +128,6 @@ class SheetsService:
             return False
 
         header = self.teachers_ws.row_values(1)
-        teacher_name_col = header.index("teacher_name") + 1
         telegram_id_col = header.index("telegram_id") + 1
 
         for row_index, row in enumerate(rows, start=2):
