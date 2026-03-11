@@ -34,6 +34,7 @@ async def main() -> None:
         mini_app_url=config.mini_app_url,
         poll_hour=config.poll_hour,
         poll_minute=config.poll_minute,
+        timezone_name="Asia/Tashkent",
     )
 
     asyncio.create_task(scheduler.run_forever())
