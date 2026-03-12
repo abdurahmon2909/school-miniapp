@@ -150,17 +150,7 @@ export default function App() {
 
   const initials = getInitials(firstName, lastName);
 
-  const topAnnouncement = useMemo(() => {
-    if (currentLesson) {
-      return `${currentLesson.lesson_number}-dars hozir davom etmoqda`;
-    }
-
-    if (lessons.length > 0) {
-      return `Bugun ${lessons.length} ta dars`;
-    }
-
-    return "Bugun darslar topilmadi";
-  }, [currentLesson, lessons]);
+  const studentAverageGrade = "O‘rtacha: —";
 
   const fakeZakovatTop = useMemo(() => {
     const currentClass = data?.class_name || "8-A";
@@ -172,17 +162,29 @@ export default function App() {
     ];
   }, [data?.class_name]);
 
-  const fakeAnnouncements = useMemo(() => {
+  const announcements = useMemo(() => {
     const items: string[] = [];
 
-    if (topAnnouncement) items.push(topAnnouncement);
-    if (data?.weekday) items.push(`${data.weekday} kuni darslar ko‘rsatilgan`);
-    if (lessons.length > 0) items.push(`Bugun ${lessons.length} ta dars`);
+    if (currentLesson) {
+      items.push(
+        `${currentLesson.lesson_number}-dars: ${currentLesson.subject_name} hozir davom etmoqda`
+      );
+    }
+
+    if (data?.weekday) {
+      items.push(`${data.weekday} kuni darslar ko‘rsatilgan`);
+    }
+
+    if (lessons.length > 0) {
+      items.push(`Bugun ${lessons.length} ta dars`);
+    }
+
     items.push("Zakovat turniri ertaga 14:00 da");
     items.push("Kutubxonaga yangi kitoblar keldi");
+    items.push("Yangi e’lonlar tez orada shu bo‘limga ulanadi");
 
-    return items.slice(0, 5);
-  }, [topAnnouncement, data?.weekday, lessons.length]);
+    return items;
+  }, [currentLesson, data?.weekday, lessons.length]);
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -303,18 +305,13 @@ export default function App() {
 
   function renderLessonCard(lesson: Lesson, compact = false) {
     const current = isCurrentLesson(lesson.start_time, lesson.end_time);
-    const cardClass = compact
-      ? `schedule-item ${current ? "schedule-item-current" : ""}`
-      : `schedule-item ${current ? "schedule-item-current" : ""}`;
 
     return (
       <div
         key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
-        className={cardClass}
+        className={`schedule-item ${current ? "schedule-item-current" : ""}`}
       >
-        <div className="schedule-time">
-          {formatTime(lesson.start_time)}
-        </div>
+        <div className="schedule-time">{formatTime(lesson.start_time)}</div>
 
         <div className="schedule-body">
           <div className="schedule-title-row">
@@ -377,7 +374,23 @@ export default function App() {
               <div className="main-hero-title">School tizimi</div>
 
               <div className="main-hero-marquee">
-                <span className="main-hero-news">📣 {fakeAnnouncements[0]}</span>
+                <div className="main-hero-marquee-track">
+                  <div className="main-hero-marquee-seq">
+                    {announcements.map((item, index) => (
+                      <span className="main-hero-news-item" key={`a-${index}`}>
+                        📣 {item}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="main-hero-marquee-seq" aria-hidden="true">
+                    {announcements.map((item, index) => (
+                      <span className="main-hero-news-item" key={`b-${index}`}>
+                        📣 {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -387,6 +400,7 @@ export default function App() {
                   {firstName} {lastName}
                 </div>
                 <div className="main-profile-role">O‘quvchi</div>
+                <div className="main-profile-average">{studentAverageGrade}</div>
               </div>
 
               <div className="main-avatar-ring">
@@ -396,15 +410,10 @@ export default function App() {
           </div>
         </div>
 
-        <div className="stats-grid">
+        <div className="stats-grid stats-grid-single">
           <div className="info-stat-card">
             <div className="info-stat-label">Sinf</div>
             <div className="info-stat-value">{data?.class_name || "-"}</div>
-          </div>
-
-          <div className="info-stat-card">
-            <div className="info-stat-label">Bugungi dars</div>
-            <div className="info-stat-value">{lessons.length}</div>
           </div>
         </div>
 
@@ -463,7 +472,7 @@ export default function App() {
             <div className="mini-info-title">E'lonlar</div>
 
             <div className="announcement-list">
-              {fakeAnnouncements.slice(0, 3).map((item, index) => (
+              {announcements.slice(0, 3).map((item, index) => (
                 <div className="announcement-line" key={`${item}-${index}`}>
                   {item}
                 </div>
@@ -567,6 +576,7 @@ export default function App() {
           </div>
 
           <div className="profile-role-badge">O‘quvchi</div>
+          <div className="profile-average-text">{studentAverageGrade}</div>
 
           <div className="profile-info-list">
             <div className="profile-info-row">
