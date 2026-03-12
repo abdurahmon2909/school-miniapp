@@ -73,11 +73,11 @@ class SheetsDB:
         client = gspread.authorize(credentials)
         self.sh = client.open_by_key(GOOGLE_SHEET_ID)
 
-        self.users_ws = self.spreadsheet.worksheet("users")
-        self.schedule_ws = self.spreadsheet.worksheet("schedule")
-        self.poll_sessions_ws = self.spreadsheet.worksheet("poll_sessions")
-        self.poll_answers_ws = self.spreadsheet.worksheet("poll_answers")
-        self.teacher_feedback_ws = self.spreadsheet.worksheet("teacher_feedback")
+        self.users_ws = self.sh.worksheet("users")
+        self.schedule_ws = self.sh.worksheet("schedule")
+        self.poll_sessions_ws = self.sh.worksheet("poll_sessions")
+        self.poll_answers_ws = self.sh.worksheet("poll_answers")
+        self.teacher_feedback_ws = self.sh.worksheet("teacher_feedback")
 
         self._cache: dict[str, dict] = {}
         self._lock = Lock()
@@ -346,7 +346,6 @@ def get_db() -> SheetsDB:
     if db_instance is None:
         db_instance = SheetsDB()
     return db_instance
-
 
 app = FastAPI(title="School MiniApp API")
 
