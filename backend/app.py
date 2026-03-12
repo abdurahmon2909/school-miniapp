@@ -71,7 +71,7 @@ class SheetsDB:
         )
 
         client = gspread.authorize(credentials)
-        self.spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+        self.sh = client.open_by_key(GOOGLE_SHEET_ID)
 
         self.users_ws = self.spreadsheet.worksheet("users")
         self.schedule_ws = self.spreadsheet.worksheet("schedule")
