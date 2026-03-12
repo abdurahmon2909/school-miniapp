@@ -41,6 +41,8 @@ type TodayLessonsResponse = {
   lessons: Lesson[];
 };
 
+type TabKey = "home" | "schedule" | "zakovat" | "profile";
+
 const BACKEND_URL = "https://school-miniapp-production-c830.up.railway.app";
 const TODAY_LESSONS_ENDPOINT = `${BACKEND_URL}/today-lessons`;
 const RATE_ENDPOINT = `${BACKEND_URL}/rate-teacher`;
@@ -81,6 +83,8 @@ function getTelegramUser() {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<TabKey>("home");
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState<TodayLessonsResponse | null>(null);
@@ -97,6 +101,8 @@ export default function App() {
 
   const tgUser = getTelegramUser();
   const firstName = tgUser?.first_name || "Foydalanuvchi";
+  const lastName = tgUser?.last_name || "";
+  const username = tgUser?.username || "";
   const telegramId = tgUser?.id;
 
   useEffect(() => {
@@ -124,6 +130,12 @@ export default function App() {
   }, [telegramId]);
 
   const lessons = useMemo(() => data?.lessons || [], [data, nowTick]);
+
+  const currentLesson = useMemo(() => {
+    return lessons.find((lesson) =>
+      isCurrentLesson(lesson.start_time, lesson.end_time)
+    );
+  }, [lessons, nowTick]);
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -230,6 +242,7 @@ export default function App() {
       }
 
       closeRateModal();
+      setActiveTab("home");
       await loadTodayLessons();
       showToast("Baholash yuborildi");
     } catch (err: any) {
@@ -239,18 +252,27 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="app-shell">
-      <div className="app-topbar">
-        <div className="app-title">School155</div>
-      </div>
-
-      <div className="page">
+  function renderHomeTab() {
+    return (
+      <>
         <div className="hero-card">
           <div className="hero-school">155-Maktab</div>
           <div className="hero-title">Asosiy</div>
           <div className="hero-subtitle">Salom, {firstName}</div>
         </div>
+
+        {currentLesson && (
+          <div className="info-banner current-banner">
+            <div className="info-banner-label">🟢 Hozirgi dars</div>
+            <div className="info-banner-title">
+              {currentLesson.lesson_number}. {currentLesson.subject_name}
+            </div>
+            <div className="info-banner-text">
+              {formatTime(currentLesson.start_time)} -{" "}
+              {formatTime(currentLesson.end_time)}
+            </div>
+          </div>
+        )}
 
         <div className="section-header">
           <div>
@@ -263,91 +285,262 @@ export default function App() {
           </div>
         </div>
 
-        {loading && (
-          <div className="state-card">
-            <div className="state-title">Yuklanmoqda...</div>
-          </div>
-        )}
+        {renderLessonsContent()}
+      </>
+    );
+  }
 
-        {!loading && error && (
-          <div className="state-card error-card">
-            <div className="state-title">Xatolik</div>
-            <div className="state-text">{error}</div>
+  function renderScheduleTab() {
+    return (
+      <>
+        <div className="hero-card secondary-hero">
+          <div className="hero-school">155-Maktab</div>
+          <div className="hero-title">Dars jadvali</div>
+          <div className="hero-subtitle">
+            {data ? `${data.weekday} • ${data.class_name}` : "Bugungi jadval"}
           </div>
-        )}
+        </div>
 
-        {!loading && !error && lessons.length === 0 && (
-          <div className="state-card">
-            <div className="state-title">Bugun dars topilmadi</div>
-            <div className="state-text">
-              Jadvalda bugungi kun uchun darslar yo‘q.
+        <div className="section-header">
+          <div>
+            <h2>Dars jadvali</h2>
+            <p className="section-meta">Bugungi darslar ro‘yxati</p>
+          </div>
+        </div>
+
+        {renderLessonsContent()}
+      </>
+    );
+  }
+
+  function renderZakovatTab() {
+    return (
+      <>
+        <div className="hero-card zakovat-hero">
+          <div className="hero-school">155-Maktab</div>
+          <div className="hero-title">Zakovat</div>
+          <div className="hero-subtitle">Maktab reyting va faollik bo‘limi</div>
+        </div>
+
+        <div className="feature-grid">
+          <div className="feature-card">
+            <div className="feature-icon">🏆</div>
+            <div className="feature-title">Top jamoalar</div>
+            <div className="feature-text">
+              Bu yerda keyin Zakovat reytinglari ko‘rinadi.
             </div>
           </div>
-        )}
 
-        {!loading && !error && lessons.length > 0 && (
-          <div className="lessons-list">
-            {lessons.map((lesson) => {
-              const current = isCurrentLesson(
-                lesson.start_time,
-                lesson.end_time
-              );
-
-              return (
-                <div
-                  key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
-                  className={`lesson-card ${current ? "current-lesson pulse" : ""}`}
-                >
-                  <div className="lesson-top">
-                    <div className="lesson-title-wrap">
-                      <div className="lesson-title-row">
-                        <h3 className="lesson-title">
-                          {lesson.lesson_number}.{" "}
-                          {lesson.subject_name || "Fan nomi yo‘q"}
-                        </h3>
-
-                        {current && <span className="live-badge">🟢 Hozir</span>}
-                      </div>
-
-                      <div className="lesson-time">
-                        {formatTime(lesson.start_time)} -{" "}
-                        {formatTime(lesson.end_time)}
-                      </div>
-                    </div>
-
-                    <button
-                      className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
-                      disabled={!lesson.poll_allowed || lesson.rated}
-                      onClick={() => openRateModal(lesson)}
-                    >
-                      {lesson.rated ? "✓ Baholangan" : "⭐ Baholang"}
-                    </button>
-                  </div>
-
-                  <div className="teachers-block">
-                    {lesson.teachers.length > 0 ? (
-                      lesson.teachers.map((teacher, index) => (
-                        <div className="teacher-line" key={`${teacher}-${index}`}>
-                          {teacher}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="teacher-line empty-teacher">
-                        O‘qituvchi ko‘rsatilmagan
-                      </div>
-                    )}
-                  </div>
-
-                  {lesson.rated && lesson.rated_teachers.length > 0 && (
-                    <div className="rated-info">
-                      Baholangan: {lesson.rated_teachers.join(", ")}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="feature-card">
+            <div className="feature-icon">📚</div>
+            <div className="feature-title">Kitoblar do‘koni</div>
+            <div className="feature-text">
+              Zakovat ballari bilan kitob olish bo‘limi shu yerda bo‘ladi.
+            </div>
           </div>
-        )}
+
+          <div className="feature-card">
+            <div className="feature-icon">⚡</div>
+            <div className="feature-title">Faollik</div>
+            <div className="feature-text">
+              O‘quvchilar va sinflarning ijtimoiy faollik ko‘rsatkichlari.
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderProfileTab() {
+    return (
+      <>
+        <div className="hero-card profile-hero">
+          <div className="hero-school">155-Maktab</div>
+          <div className="hero-title">Profil</div>
+          <div className="hero-subtitle">Shaxsiy ma’lumotlar</div>
+        </div>
+
+        <div className="profile-card">
+          <div className="profile-avatar-ring">
+            <div className="profile-avatar">
+              {firstName?.[0]?.toUpperCase() || "U"}
+            </div>
+          </div>
+
+          <div className="profile-name">
+            {firstName} {lastName}
+          </div>
+
+          <div className="profile-info-list">
+            <div className="profile-info-row">
+              <span>Telegram ID</span>
+              <strong>{telegramId || "-"}</strong>
+            </div>
+
+            <div className="profile-info-row">
+              <span>Username</span>
+              <strong>{username ? `@${username}` : "-"}</strong>
+            </div>
+
+            <div className="profile-info-row">
+              <span>Sinf</span>
+              <strong>{data?.class_name || "-"}</strong>
+            </div>
+
+            <div className="profile-info-row">
+              <span>Bugungi kun</span>
+              <strong>{data?.weekday || "-"}</strong>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderLessonsContent() {
+    if (loading) {
+      return (
+        <div className="state-card">
+          <div className="state-title">Yuklanmoqda...</div>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="state-card error-card">
+          <div className="state-title">Xatolik</div>
+          <div className="state-text">{error}</div>
+        </div>
+      );
+    }
+
+    if (lessons.length === 0) {
+      return (
+        <div className="state-card">
+          <div className="state-title">Bugun dars topilmadi</div>
+          <div className="state-text">
+            Jadvalda bugungi kun uchun darslar yo‘q.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="lessons-list">
+        {lessons.map((lesson) => {
+          const current = isCurrentLesson(lesson.start_time, lesson.end_time);
+
+          return (
+            <div
+              key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
+              className={`lesson-card ${current ? "current-lesson pulse" : ""}`}
+            >
+              <div className="lesson-top">
+                <div className="lesson-title-wrap">
+                  <div className="lesson-title-row">
+                    <h3 className="lesson-title">
+                      {lesson.lesson_number}. {lesson.subject_name || "Fan nomi yo‘q"}
+                    </h3>
+
+                    {current && <span className="live-badge">🟢 Hozir</span>}
+                  </div>
+
+                  <div className="lesson-time">
+                    {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
+                  </div>
+                </div>
+
+                <button
+                  className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
+                  disabled={!lesson.poll_allowed || lesson.rated}
+                  onClick={() => openRateModal(lesson)}
+                >
+                  {lesson.rated ? "✓ Baholangan" : "⭐ Baholang"}
+                </button>
+              </div>
+
+              <div className="teachers-block">
+                {lesson.teachers.length > 0 ? (
+                  lesson.teachers.map((teacher, index) => (
+                    <div className="teacher-line" key={`${teacher}-${index}`}>
+                      {teacher}
+                    </div>
+                  ))
+                ) : (
+                  <div className="teacher-line empty-teacher">
+                    O‘qituvchi ko‘rsatilmagan
+                  </div>
+                )}
+              </div>
+
+              {lesson.rated && lesson.rated_teachers.length > 0 && (
+                <div className="rated-info">
+                  Baholangan: {lesson.rated_teachers.join(", ")}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderActiveTab() {
+    switch (activeTab) {
+      case "home":
+        return renderHomeTab();
+      case "schedule":
+        return renderScheduleTab();
+      case "zakovat":
+        return renderZakovatTab();
+      case "profile":
+        return renderProfileTab();
+      default:
+        return renderHomeTab();
+    }
+  }
+
+  return (
+    <div className="app-shell">
+      <div className="app-topbar">
+        <div className="app-title">School155</div>
+      </div>
+
+      <div className="page with-bottom-nav">{renderActiveTab()}</div>
+
+      <div className="bottom-nav">
+        <button
+          className={`bottom-nav-item ${activeTab === "home" ? "bottom-nav-item-active" : ""}`}
+          onClick={() => setActiveTab("home")}
+        >
+          <span className="bottom-nav-icon">🏠</span>
+          <span className="bottom-nav-label">Asosiy</span>
+        </button>
+
+        <button
+          className={`bottom-nav-item ${activeTab === "schedule" ? "bottom-nav-item-active" : ""}`}
+          onClick={() => setActiveTab("schedule")}
+        >
+          <span className="bottom-nav-icon">📘</span>
+          <span className="bottom-nav-label">Jadval</span>
+        </button>
+
+        <button
+          className={`bottom-nav-item ${activeTab === "zakovat" ? "bottom-nav-item-active" : ""}`}
+          onClick={() => setActiveTab("zakovat")}
+        >
+          <span className="bottom-nav-icon">🧠</span>
+          <span className="bottom-nav-label">Zakovat</span>
+        </button>
+
+        <button
+          className={`bottom-nav-item ${activeTab === "profile" ? "bottom-nav-item-active" : ""}`}
+          onClick={() => setActiveTab("profile")}
+        >
+          <span className="bottom-nav-icon">👤</span>
+          <span className="bottom-nav-label">Profil</span>
+        </button>
       </div>
 
       {selectedLesson && (
