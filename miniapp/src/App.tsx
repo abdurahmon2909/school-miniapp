@@ -221,7 +221,7 @@ export default function App() {
                   {lesson.lesson_number}. {lesson.subject_name}
                 </div>
                 <div style={{ fontSize: 13, color: "#5f6b7a", marginTop: 4 }}>
-                  {lesson.start_time} - {lesson.end_time}
+                  {lesson.start_time.slice(0,5)} - {lesson.end_time.slice(0,5)}
                 </div>
                 <div style={{ fontSize: 14, color: "#334155", marginTop: 8 }}>
                   {lesson.teachers.join(" / ")}
