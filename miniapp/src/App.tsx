@@ -45,7 +45,7 @@ type TabKey = "home" | "schedule" | "zakovat" | "profile";
 
 const BACKEND_URL = "https://school-miniapp-production-c830.up.railway.app";
 const TODAY_LESSONS_ENDPOINT = `${BACKEND_URL}/today-lessons`;
-const RATE_ENDPOINT = `${BACKEND_URL}/rate-teacher`;
+const RATE_ENDPOINT = `${BACKEND_URL}/submit-rating`;
 
 function formatTime(time: string) {
   if (!time) return "";
@@ -221,10 +221,12 @@ export default function App() {
 
       const payload = {
         telegram_id: telegramId,
-        poll_id: selectedLesson.poll_id,
-        chosen_teacher: selectedTeacher.trim(),
+        lesson_number: selectedLesson.lesson_number,
+        subject_name: selectedLesson.subject_name,
+        teacher_name: selectedTeacher.trim(),
         score_value: scoreValue,
         anonymous_comment: comment.trim(),
+        opened_at: new Date().toISOString().slice(0, 19).replace("T", " "),
       };
 
       const response = await fetch(RATE_ENDPOINT, {
@@ -507,7 +509,9 @@ export default function App() {
         <div className="app-title">School155</div>
       </div>
 
-      <div className="page with-bottom-nav">{renderActiveTab()}</div>
+      <main className="app-content">
+        <div className="page">{renderActiveTab()}</div>
+      </main>
 
       <div className="bottom-nav">
         <button
