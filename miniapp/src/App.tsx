@@ -1,11 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import "./App.css";
 
-type TgUser = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-};
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: {
+        ready: () => void;
+        expand: () => void;
+        initDataUnsafe?: {
+          user?: {
+            id?: number;
+            first_name?: string;
+            last_name?: string;
+            username?: string;
+          };
+        };
+      };
+    };
+  }
+}
 
 type Lesson = {
   poll_id: number;
@@ -27,351 +40,219 @@ type TodayLessonsResponse = {
   lessons: Lesson[];
 };
 
-declare global {
-  interface Window {
-    Telegram?: any;
-  }
+const BACKEND_URL = "https://school-miniapp-production-c830.up.railway.app";
+
+function formatTime(time: string) {
+  if (!time) return "";
+  return time.slice(0, 5);
 }
 
-const API_BASE = "https://school-miniapp-production-c830.up.railway.app";
+function isCurrentLesson(start: string, end: string) {
+  if (!start || !end) return false;
+
+  const now = new Date();
+
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+
+  if (
+    Number.isNaN(sh) ||
+    Number.isNaN(sm) ||
+    Number.isNaN(eh) ||
+    Number.isNaN(em)
+  ) {
+    return false;
+  }
+
+  const startDate = new Date();
+  startDate.setHours(sh, sm, 0, 0);
+
+  const endDate = new Date();
+  endDate.setHours(eh, em, 0, 0);
+
+  return now >= startDate && now <= endDate;
+}
+
+function getTelegramUser() {
+  return window.Telegram?.WebApp?.initDataUnsafe?.user;
+}
 
 export default function App() {
-  const [tgUser, setTgUser] = useState<TgUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
-  const [selectedTeacher, setSelectedTeacher] = useState<string>("");
-  const [score, setScore] = useState<number>(10);
-  const [comment, setComment] = useState<string>("");
-  const [openedAt, setOpenedAt] = useState<string>("");
-  const [submitting, setSubmitting] = useState(false);
-  const [errorText, setErrorText] = useState("");
+  const [error, setError] = useState("");
+  const [data, setData] = useState<TodayLessonsResponse | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  const tgUser = getTelegramUser();
+  const firstName = tgUser?.first_name || "Foydalanuvchi";
+  const telegramId = tgUser?.id;
 
   useEffect(() => {
-    const tg = window.Telegram?.WebApp;
-    if (!tg) {
-      setErrorText("Telegram WebApp topilmadi");
-      setLoading(false);
-      return;
-    }
-
-    tg.ready();
-    tg.expand();
-
-    const user = tg.initDataUnsafe?.user;
-    if (user) {
-      setTgUser(user);
-    } else {
-      setErrorText("Telegram user topilmadi");
-      setLoading(false);
-    }
+    window.Telegram?.WebApp?.ready();
+    window.Telegram?.WebApp?.expand();
   }, []);
 
   useEffect(() => {
-    if (!tgUser?.id) return;
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 30000);
 
-    fetch(`${API_BASE}/today-lessons`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ telegram_id: tgUser.id }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
+    return () => clearInterval(timer);
+  }, []);
 
-        if (!res.ok) {
-          throw new Error(data.detail || `API error ${res.status}`);
+  useEffect(() => {
+    async function loadTodayLessons() {
+      try {
+        setLoading(true);
+        setError("");
+
+        if (!telegramId) {
+          throw new Error("Telegram user ID topilmadi");
         }
 
-        return data as TodayLessonsResponse;
-      })
-      .then((data) => {
-        setLessons(data.lessons || []);
-        setErrorText("");
-      })
-      .catch((err) => {
-        console.error(err);
-        setErrorText(err.message || "Noma’lum xatolik");
-      })
-      .finally(() => {
+        const response = await fetch(`${BACKEND_URL}/today-lessons`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            telegram_id: telegramId,
+          }),
+        });
+
+        const json = await response.json();
+
+        if (!response.ok) {
+          throw new Error(json?.detail || "Backend xatolik qaytardi");
+        }
+
+        setData(json);
+      } catch (err: any) {
+        setError(err?.message || "Failed to fetch");
+      } finally {
         setLoading(false);
-      });
-  }, [tgUser]);
-
-  const openLesson = (lesson: Lesson) => {
-    setSelectedLesson(lesson);
-    setSelectedTeacher(lesson.teachers[0] || "");
-    setScore(10);
-    setComment("");
-
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const opened = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    setOpenedAt(opened);
-  };
-
-  const closeLesson = () => {
-    setSelectedLesson(null);
-    setSelectedTeacher("");
-    setComment("");
-    setScore(10);
-    setOpenedAt("");
-  };
-
-  const submitRating = async () => {
-    if (!tgUser?.id || !selectedLesson || !selectedTeacher) return;
-
-    setSubmitting(true);
-
-    try {
-      const res = await fetch(`${API_BASE}/submit-rating`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          telegram_id: tgUser.id,
-          lesson_number: selectedLesson.lesson_number,
-          subject_name: selectedLesson.subject_name,
-          teacher_name: selectedTeacher,
-          score_value: score,
-          anonymous_comment: comment,
-          opened_at: openedAt,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.detail || `Submit error ${res.status}`);
       }
-
-      setLessons((prev) =>
-        prev.map((item) =>
-          item.poll_id === selectedLesson.poll_id
-            ? {
-                ...item,
-                rated: true,
-                rated_teachers: [...item.rated_teachers, selectedTeacher],
-              }
-            : item
-        )
-      );
-
-      alert("Baholash yuborildi");
-      closeLesson();
-    } catch (error: any) {
-      alert(error.message || "Xatolik yuz berdi");
-    } finally {
-      setSubmitting(false);
     }
-  };
 
-  const greeting = useMemo(() => {
-    if (!tgUser) return "Foydalanuvchi";
-    return tgUser.first_name || "Foydalanuvchi";
-  }, [tgUser]);
+    loadTodayLessons();
+  }, [telegramId]);
 
-  if (loading) {
-    return <div style={{ padding: 20, fontFamily: "sans-serif" }}>Yuklanmoqda...</div>;
-  }
-
-  if (errorText) {
-    return (
-      <div style={{ padding: 20, fontFamily: "sans-serif", background: "#f4f8ff", minHeight: "100vh" }}>
-        <div style={{ background: "white", borderRadius: 16, padding: 16, boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Xatolik</div>
-          <div style={{ color: "#334155" }}>{errorText}</div>
-        </div>
-      </div>
-    );
-  }
+  const lessons = useMemo(() => data?.lessons || [], [data, nowTick]);
 
   return (
-    <div style={{ padding: 16, fontFamily: "sans-serif", background: "#f4f8ff", minHeight: "100vh" }}>
-      <div style={{ background: "linear-gradient(90deg,#2f6bff,#5b8cff)", color: "white", borderRadius: 18, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 12, opacity: 0.9 }}>155-Maktab</div>
-        <div style={{ fontSize: 22, fontWeight: 700 }}>Asosiy</div>
-        <div style={{ marginTop: 8, fontSize: 14 }}>Salom, {greeting}</div>
+    <div className="app-shell">
+      <div className="app-topbar">
+        <div className="app-title">School155</div>
       </div>
 
-      <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 18 }}>
-        Bugungi darslar
-      </div>
+      <div className="page">
+        <div className="hero-card">
+          <div className="hero-school">155-Maktab</div>
+          <div className="hero-title">Asosiy</div>
+          <div className="hero-subtitle">Salom, {firstName}</div>
+        </div>
 
-      <div style={{ display: "grid", gap: 12 }}>
-        {lessons.map((lesson) => (
-          <button
-            key={lesson.poll_id}
-            onClick={() => openLesson(lesson)}
-            style={{
-              textAlign: "left",
-              border: "none",
-              borderRadius: 18,
-              background: "white",
-              padding: 16,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
-              cursor: "pointer",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>
-                  {lesson.lesson_number}. {lesson.subject_name}
-                </div>
-                <div style={{ fontSize: 13, color: "#5f6b7a", marginTop: 4 }}>
-                  {lesson.start_time.slice(0,5)} - {lesson.end_time.slice(0,5)}
-                </div>
-                <div style={{ fontSize: 14, color: "#334155", marginTop: 8 }}>
-                  {lesson.teachers.join(" / ")}
-                </div>
-              </div>
-
-              <div style={{ minWidth: 110, textAlign: "right" }}>
-                <div
-                  style={{
-                    display: "inline-block",
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    background: lesson.rated ? "#d9f7e7" : "#fff4c2",
-                    color: lesson.rated ? "#127a3f" : "#9a6b00",
-                    fontSize: 12,
-                    fontWeight: 700,
-                  }}
-                >
-                  {lesson.rated ? "✔ Baholangan" : "⭐ Baholang"}
-                </div>
-
-                {lesson.rated_teachers.length > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-                    {lesson.rated_teachers.length} ta fikr
-                  </div>
-                )}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {selectedLesson && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            padding: 12,
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 480,
-              background: "white",
-              borderRadius: 24,
-              padding: 18,
-            }}
-          >
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              {selectedLesson.subject_name}
-            </div>
-
-            <div style={{ marginTop: 14, fontSize: 14, color: "#475569" }}>
-              O‘qituvchini tanlang
-            </div>
-
-            <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-              {selectedLesson.teachers.map((teacher) => (
-                <button
-                  key={teacher}
-                  onClick={() => setSelectedTeacher(teacher)}
-                  style={{
-                    border: selectedTeacher === teacher ? "2px solid #2563eb" : "1px solid #dbe2ea",
-                    background: selectedTeacher === teacher ? "#eff6ff" : "white",
-                    borderRadius: 14,
-                    padding: 12,
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                >
-                  {teacher}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ marginTop: 16, fontSize: 14, color: "#475569" }}>
-              Baho (1–10)
-            </div>
-
-            <input
-              type="range"
-              min={1}
-              max={10}
-              value={score}
-              onChange={(e) => setScore(Number(e.target.value))}
-              style={{ width: "100%", marginTop: 8 }}
-            />
-
-            <div style={{ marginTop: 6, fontWeight: 700 }}>{score} ball</div>
-
-            <div style={{ marginTop: 16, fontSize: 14, color: "#475569" }}>
-              Anonim izoh (ixtiyoriy)
-            </div>
-
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              rows={4}
-              style={{
-                width: "100%",
-                marginTop: 8,
-                borderRadius: 14,
-                border: "1px solid #dbe2ea",
-                padding: 12,
-                resize: "none",
-                fontFamily: "sans-serif",
-              }}
-              placeholder="Izoh qoldiring..."
-            />
-
-            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-              <button
-                onClick={closeLesson}
-                style={{
-                  flex: 1,
-                  border: "1px solid #dbe2ea",
-                  background: "white",
-                  borderRadius: 14,
-                  padding: 12,
-                  cursor: "pointer",
-                }}
-              >
-                Bekor qilish
-              </button>
-
-              <button
-                onClick={submitRating}
-                disabled={submitting || !selectedTeacher}
-                style={{
-                  flex: 1,
-                  border: "none",
-                  background: "#2563eb",
-                  color: "white",
-                  borderRadius: 14,
-                  padding: 12,
-                  cursor: "pointer",
-                  opacity: submitting ? 0.7 : 1,
-                }}
-              >
-                {submitting ? "Yuborilmoqda..." : "Yuborish"}
-              </button>
-            </div>
+        <div className="section-header">
+          <div>
+            <h2>Bugungi darslar</h2>
+            {data && (
+              <p className="section-meta">
+                {data.weekday} • {data.class_name}
+              </p>
+            )}
           </div>
         </div>
-      )}
+
+        {loading && (
+          <div className="state-card">
+            <div className="state-title">Yuklanmoqda...</div>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="state-card error-card">
+            <div className="state-title">Xatolik</div>
+            <div className="state-text">{error}</div>
+          </div>
+        )}
+
+        {!loading && !error && lessons.length === 0 && (
+          <div className="state-card">
+            <div className="state-title">Bugun dars topilmadi</div>
+            <div className="state-text">
+              Jadvalda bugungi kun uchun darslar yo‘q yoki class/weekday mos
+              kelmadi.
+            </div>
+          </div>
+        )}
+
+        {!loading && !error && lessons.length > 0 && (
+          <div className="lessons-list">
+            {lessons.map((lesson) => {
+              const current = isCurrentLesson(
+                lesson.start_time,
+                lesson.end_time
+              );
+
+              return (
+                <div
+                  key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
+                  className={`lesson-card ${current ? "current-lesson pulse" : ""}`}
+                >
+                  <div className="lesson-top">
+                    <div className="lesson-title-wrap">
+                      <div className="lesson-title-row">
+                        <h3 className="lesson-title">
+                          {lesson.lesson_number}. {lesson.subject_name || "Fan nomi yo‘q"}
+                        </h3>
+
+                        {current && <span className="live-badge">🟢 Hozir</span>}
+                      </div>
+
+                      <div className="lesson-time">
+                        {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
+                      </div>
+                    </div>
+
+                    <button
+                      className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
+                      disabled={!lesson.poll_allowed}
+                      onClick={() => {
+                        if (!lesson.poll_allowed) return;
+                        alert(
+                          `Baholash oynasi keyin ulanadi.\n\nFan: ${lesson.subject_name}`
+                        );
+                      }}
+                    >
+                      {lesson.rated ? "✓ Baholandi" : "⭐ Baholang"}
+                    </button>
+                  </div>
+
+                  <div className="teachers-block">
+                    {lesson.teachers.length > 0 ? (
+                      lesson.teachers.map((teacher, index) => (
+                        <div className="teacher-line" key={`${teacher}-${index}`}>
+                          {teacher}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="teacher-line empty-teacher">
+                        O‘qituvchi ko‘rsatilmagan
+                      </div>
+                    )}
+                  </div>
+
+                  {lesson.rated && lesson.rated_teachers.length > 0 && (
+                    <div className="rated-info">
+                      Baholangan: {lesson.rated_teachers.join(", ")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
