@@ -62,7 +62,8 @@ class SheetsDB:
             "https://www.googleapis.com/auth/drive",
         ]
 
-        creds_dict = json.loads(GOOGLE_CREDS.replace("\\n", "\n"))
+        creds_dict = json.loads(GOOGLE_CREDS)
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
         credentials = Credentials.from_service_account_info(
             creds_dict,
