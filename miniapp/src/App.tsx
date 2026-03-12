@@ -82,13 +82,24 @@ function getTelegramUser() {
   return window.Telegram?.WebApp?.initDataUnsafe?.user;
 }
 
+function getInitials(firstName: string, lastName: string) {
+  const a = firstName?.trim()?.[0] || "";
+  const b = lastName?.trim()?.[0] || "";
+  return `${a}${b}`.toUpperCase() || "U";
+}
+
+function getWeekdayLabel(weekday?: string) {
+  if (!weekday) return "";
+  return weekday;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState<TodayLessonsResponse | null>(null);
-  const [nowTick, setNowTick] = useState(Date.now());
+  const [, setNowTick] = useState(Date.now());
 
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [selectedTeacher, setSelectedTeacher] = useState("");
@@ -129,13 +140,49 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [telegramId]);
 
-  const lessons = useMemo(() => data?.lessons || [], [data, nowTick]);
+  const lessons = useMemo(() => data?.lessons || [], [data]);
 
   const currentLesson = useMemo(() => {
     return lessons.find((lesson) =>
       isCurrentLesson(lesson.start_time, lesson.end_time)
     );
-  }, [lessons, nowTick]);
+  }, [lessons]);
+
+  const initials = getInitials(firstName, lastName);
+
+  const topAnnouncement = useMemo(() => {
+    if (currentLesson) {
+      return `${currentLesson.lesson_number}-dars hozir davom etmoqda`;
+    }
+
+    if (lessons.length > 0) {
+      return `Bugun ${lessons.length} ta dars`;
+    }
+
+    return "Bugun darslar topilmadi";
+  }, [currentLesson, lessons]);
+
+  const fakeZakovatTop = useMemo(() => {
+    const currentClass = data?.class_name || "8-A";
+
+    return [
+      { class_name: currentClass, points: 1280 },
+      { class_name: "9-B", points: 1210 },
+      { class_name: "7-A", points: 1160 },
+    ];
+  }, [data?.class_name]);
+
+  const fakeAnnouncements = useMemo(() => {
+    const items: string[] = [];
+
+    if (topAnnouncement) items.push(topAnnouncement);
+    if (data?.weekday) items.push(`${data.weekday} kuni darslar ko‘rsatilgan`);
+    if (lessons.length > 0) items.push(`Bugun ${lessons.length} ta dars`);
+    items.push("Zakovat turniri ertaga 14:00 da");
+    items.push("Kutubxonaga yangi kitoblar keldi");
+
+    return items.slice(0, 5);
+  }, [topAnnouncement, data?.weekday, lessons.length]);
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -254,40 +301,176 @@ export default function App() {
     }
   }
 
+  function renderLessonCard(lesson: Lesson, compact = false) {
+    const current = isCurrentLesson(lesson.start_time, lesson.end_time);
+    const cardClass = compact
+      ? `schedule-item ${current ? "schedule-item-current" : ""}`
+      : `schedule-item ${current ? "schedule-item-current" : ""}`;
+
+    return (
+      <div
+        key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
+        className={cardClass}
+      >
+        <div className="schedule-time">
+          {formatTime(lesson.start_time)}
+        </div>
+
+        <div className="schedule-body">
+          <div className="schedule-title-row">
+            <div className="schedule-subject">
+              {lesson.subject_name || "Fan nomi yo‘q"}
+            </div>
+
+            {current && <span className="current-pill">Hozir</span>}
+          </div>
+
+          <div className="schedule-teacher-list">
+            {lesson.teachers.length > 0 ? (
+              lesson.teachers.map((teacher, index) => (
+                <div className="schedule-teacher" key={`${teacher}-${index}`}>
+                  {teacher}
+                </div>
+              ))
+            ) : (
+              <div className="schedule-teacher schedule-teacher-empty">
+                O‘qituvchi ko‘rsatilmagan
+              </div>
+            )}
+          </div>
+
+          {!compact && (
+            <>
+              <div className="schedule-range">
+                {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
+              </div>
+
+              <div className="lesson-actions-row">
+                <button
+                  className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
+                  disabled={!lesson.poll_allowed || lesson.rated}
+                  onClick={() => openRateModal(lesson)}
+                >
+                  {lesson.rated ? "✓ Baholangan" : "⭐ Baholang"}
+                </button>
+              </div>
+
+              {lesson.rated && lesson.rated_teachers.length > 0 && (
+                <div className="rated-info">
+                  Baholangan: {lesson.rated_teachers.join(", ")}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function renderHomeTab() {
     return (
       <>
-        <div className="hero-card">
-          <div className="hero-school">155-Maktab</div>
-          <div className="hero-title">Asosiy</div>
-          <div className="hero-subtitle">Salom, {firstName}</div>
-        </div>
+        <div className="main-hero">
+          <div className="main-hero-top">
+            <div className="main-hero-left">
+              <div className="main-school-id">155-Maktab</div>
+              <div className="main-hero-title">School tizimi</div>
 
-        {currentLesson && (
-          <div className="info-banner current-banner">
-            <div className="info-banner-label">🟢 Hozirgi dars</div>
-            <div className="info-banner-title">
-              {currentLesson.lesson_number}. {currentLesson.subject_name}
+              <div className="main-hero-marquee">
+                <span className="main-hero-news">📣 {fakeAnnouncements[0]}</span>
+              </div>
             </div>
-            <div className="info-banner-text">
-              {formatTime(currentLesson.start_time)} -{" "}
-              {formatTime(currentLesson.end_time)}
-            </div>
-          </div>
-        )}
 
-        <div className="section-header">
-          <div>
-            <h2>Bugungi darslar</h2>
-            {data && (
-              <p className="section-meta">
-                {data.weekday} • {data.class_name}
-              </p>
-            )}
+            <div className="main-profile-short">
+              <div className="main-profile-text">
+                <div className="main-profile-name">
+                  {firstName} {lastName}
+                </div>
+                <div className="main-profile-role">O‘quvchi</div>
+              </div>
+
+              <div className="main-avatar-ring">
+                <div className="main-avatar">{initials}</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {renderLessonsContent()}
+        <div className="stats-grid">
+          <div className="info-stat-card">
+            <div className="info-stat-label">Sinf</div>
+            <div className="info-stat-value">{data?.class_name || "-"}</div>
+          </div>
+
+          <div className="info-stat-card">
+            <div className="info-stat-label">Bugungi dars</div>
+            <div className="info-stat-value">{lessons.length}</div>
+          </div>
+        </div>
+
+        <div className="big-section-card">
+          <div className="big-section-head">
+            <h2>Bugungi jadval</h2>
+            <button
+              type="button"
+              className="section-link-btn"
+              onClick={() => setActiveTab("schedule")}
+            >
+              Barchasi
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="state-card inside-state-card">
+              <div className="state-title">Yuklanmoqda...</div>
+            </div>
+          ) : error ? (
+            <div className="state-card error-card inside-state-card">
+              <div className="state-title">Xatolik</div>
+              <div className="state-text">{error}</div>
+            </div>
+          ) : lessons.length === 0 ? (
+            <div className="state-card inside-state-card">
+              <div className="state-title">Bugun dars topilmadi</div>
+              <div className="state-text">
+                Jadvalda bugungi kun uchun darslar yo‘q.
+              </div>
+            </div>
+          ) : (
+            <div className="schedule-list">
+              {lessons.slice(0, 4).map((lesson) => renderLessonCard(lesson, true))}
+            </div>
+          )}
+        </div>
+
+        <div className="bottom-info-grid">
+          <div className="mini-info-card">
+            <div className="mini-info-title">Zakovat TOP</div>
+
+            <div className="mini-list">
+              {fakeZakovatTop.map((item, index) => (
+                <div className="mini-list-row" key={`${item.class_name}-${index}`}>
+                  <span>
+                    {index + 1}. {item.class_name}
+                  </span>
+                  <strong>{item.points}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mini-info-card">
+            <div className="mini-info-title">E'lonlar</div>
+
+            <div className="announcement-list">
+              {fakeAnnouncements.slice(0, 3).map((item, index) => (
+                <div className="announcement-line" key={`${item}-${index}`}>
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </>
     );
   }
@@ -295,22 +478,34 @@ export default function App() {
   function renderScheduleTab() {
     return (
       <>
-        <div className="hero-card secondary-hero">
-          <div className="hero-school">155-Maktab</div>
-          <div className="hero-title">Dars jadvali</div>
-          <div className="hero-subtitle">
-            {data ? `${data.weekday} • ${data.class_name}` : "Bugungi jadval"}
+        <div className="inner-page-head">
+          <div className="inner-page-title">Dars jadvali</div>
+          <div className="inner-page-subtitle">
+            {data ? `${getWeekdayLabel(data.weekday)} • ${data.class_name}` : "Bugungi jadval"}
           </div>
         </div>
 
-        <div className="section-header">
-          <div>
-            <h2>Dars jadvali</h2>
-            <p className="section-meta">Bugungi darslar ro‘yxati</p>
+        {loading ? (
+          <div className="state-card">
+            <div className="state-title">Yuklanmoqda...</div>
           </div>
-        </div>
-
-        {renderLessonsContent()}
+        ) : error ? (
+          <div className="state-card error-card">
+            <div className="state-title">Xatolik</div>
+            <div className="state-text">{error}</div>
+          </div>
+        ) : lessons.length === 0 ? (
+          <div className="state-card">
+            <div className="state-title">Bugun dars topilmadi</div>
+            <div className="state-text">
+              Jadvalda bugungi kun uchun darslar yo‘q.
+            </div>
+          </div>
+        ) : (
+          <div className="schedule-list schedule-list-full">
+            {lessons.map((lesson) => renderLessonCard(lesson))}
+          </div>
+        )}
       </>
     );
   }
@@ -318,10 +513,11 @@ export default function App() {
   function renderZakovatTab() {
     return (
       <>
-        <div className="hero-card zakovat-hero">
-          <div className="hero-school">155-Maktab</div>
-          <div className="hero-title">Zakovat</div>
-          <div className="hero-subtitle">Maktab reyting va faollik bo‘limi</div>
+        <div className="inner-page-head">
+          <div className="inner-page-title">Zakovat</div>
+          <div className="inner-page-subtitle">
+            Maktab reyting va faollik bo‘limi
+          </div>
         </div>
 
         <div className="feature-grid">
@@ -356,22 +552,21 @@ export default function App() {
   function renderProfileTab() {
     return (
       <>
-        <div className="hero-card profile-hero">
-          <div className="hero-school">155-Maktab</div>
-          <div className="hero-title">Profil</div>
-          <div className="hero-subtitle">Shaxsiy ma’lumotlar</div>
+        <div className="inner-page-head">
+          <div className="inner-page-title">Profil</div>
+          <div className="inner-page-subtitle">Shaxsiy ma’lumotlar</div>
         </div>
 
         <div className="profile-card">
           <div className="profile-avatar-ring">
-            <div className="profile-avatar">
-              {firstName?.[0]?.toUpperCase() || "U"}
-            </div>
+            <div className="profile-avatar">{initials}</div>
           </div>
 
           <div className="profile-name">
             {firstName} {lastName}
           </div>
+
+          <div className="profile-role-badge">O‘quvchi</div>
 
           <div className="profile-info-list">
             <div className="profile-info-row">
@@ -399,95 +594,6 @@ export default function App() {
     );
   }
 
-  function renderLessonsContent() {
-    if (loading) {
-      return (
-        <div className="state-card">
-          <div className="state-title">Yuklanmoqda...</div>
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="state-card error-card">
-          <div className="state-title">Xatolik</div>
-          <div className="state-text">{error}</div>
-        </div>
-      );
-    }
-
-    if (lessons.length === 0) {
-      return (
-        <div className="state-card">
-          <div className="state-title">Bugun dars topilmadi</div>
-          <div className="state-text">
-            Jadvalda bugungi kun uchun darslar yo‘q.
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="lessons-list">
-        {lessons.map((lesson) => {
-          const current = isCurrentLesson(lesson.start_time, lesson.end_time);
-
-          return (
-            <div
-              key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
-              className={`lesson-card ${current ? "current-lesson pulse" : ""}`}
-            >
-              <div className="lesson-top">
-                <div className="lesson-title-wrap">
-                  <div className="lesson-title-row">
-                    <h3 className="lesson-title">
-                      {lesson.lesson_number}. {lesson.subject_name || "Fan nomi yo‘q"}
-                    </h3>
-
-                    {current && <span className="live-badge">🟢 Hozir</span>}
-                  </div>
-
-                  <div className="lesson-time">
-                    {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
-                  </div>
-                </div>
-
-                <button
-                  className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
-                  disabled={!lesson.poll_allowed || lesson.rated}
-                  onClick={() => openRateModal(lesson)}
-                >
-                  {lesson.rated ? "✓ Baholangan" : "⭐ Baholang"}
-                </button>
-              </div>
-
-              <div className="teachers-block">
-                {lesson.teachers.length > 0 ? (
-                  lesson.teachers.map((teacher, index) => (
-                    <div className="teacher-line" key={`${teacher}-${index}`}>
-                      {teacher}
-                    </div>
-                  ))
-                ) : (
-                  <div className="teacher-line empty-teacher">
-                    O‘qituvchi ko‘rsatilmagan
-                  </div>
-                )}
-              </div>
-
-              {lesson.rated && lesson.rated_teachers.length > 0 && (
-                <div className="rated-info">
-                  Baholangan: {lesson.rated_teachers.join(", ")}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
   function renderActiveTab() {
     switch (activeTab) {
       case "home":
@@ -505,17 +611,17 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="app-topbar">
-        <div className="app-title">School155</div>
-      </div>
-
       <main className="app-content">
-        <div className="page">{renderActiveTab()}</div>
+        <div className={`page ${activeTab !== "home" ? "with-bottom-nav" : ""}`}>
+          {renderActiveTab()}
+        </div>
       </main>
 
       <div className="bottom-nav">
         <button
-          className={`bottom-nav-item ${activeTab === "home" ? "bottom-nav-item-active" : ""}`}
+          className={`bottom-nav-item ${
+            activeTab === "home" ? "bottom-nav-item-active" : ""
+          }`}
           onClick={() => setActiveTab("home")}
         >
           <span className="bottom-nav-icon">🏠</span>
@@ -523,15 +629,19 @@ export default function App() {
         </button>
 
         <button
-          className={`bottom-nav-item ${activeTab === "schedule" ? "bottom-nav-item-active" : ""}`}
+          className={`bottom-nav-item ${
+            activeTab === "schedule" ? "bottom-nav-item-active" : ""
+          }`}
           onClick={() => setActiveTab("schedule")}
         >
-          <span className="bottom-nav-icon">📘</span>
+          <span className="bottom-nav-icon">📚</span>
           <span className="bottom-nav-label">Jadval</span>
         </button>
 
         <button
-          className={`bottom-nav-item ${activeTab === "zakovat" ? "bottom-nav-item-active" : ""}`}
+          className={`bottom-nav-item ${
+            activeTab === "zakovat" ? "bottom-nav-item-active" : ""
+          }`}
           onClick={() => setActiveTab("zakovat")}
         >
           <span className="bottom-nav-icon">🧠</span>
@@ -539,7 +649,9 @@ export default function App() {
         </button>
 
         <button
-          className={`bottom-nav-item ${activeTab === "profile" ? "bottom-nav-item-active" : ""}`}
+          className={`bottom-nav-item ${
+            activeTab === "profile" ? "bottom-nav-item-active" : ""
+          }`}
           onClick={() => setActiveTab("profile")}
         >
           <span className="bottom-nav-icon">👤</span>
@@ -571,7 +683,9 @@ export default function App() {
                   <button
                     key={teacher}
                     type="button"
-                    className={`teacher-select-btn ${active ? "teacher-select-btn-active" : ""}`}
+                    className={`teacher-select-btn ${
+                      active ? "teacher-select-btn-active" : ""
+                    }`}
                     onClick={() => setSelectedTeacher(teacher)}
                   >
                     {teacher}
