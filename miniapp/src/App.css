@@ -17,6 +17,12 @@ body {
   overflow-x: hidden;
 }
 
+button,
+input,
+textarea {
+  font: inherit;
+}
+
 .app-shell {
   min-height: 100vh;
   background: linear-gradient(180deg, #eef3fb 0%, #e9eef7 100%);
@@ -201,7 +207,7 @@ body {
 }
 
 .rate-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -260,6 +266,219 @@ body {
   line-height: 1.45;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 27, 43, 0.42);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 14px;
+  z-index: 1000;
+}
+
+.rate-modal {
+  width: 100%;
+  max-width: 560px;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow: 0 20px 40px rgba(17, 30, 52, 0.24);
+  animation: modalUp 0.22s ease;
+}
+
+@keyframes modalUp {
+  from {
+    transform: translateY(16px);
+    opacity: 0.65;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #15233a;
+}
+
+.modal-subtitle {
+  margin: 6px 0 0;
+  color: #627089;
+  font-size: 15px;
+}
+
+.icon-close-btn {
+  border: none;
+  background: #eef3fb;
+  color: #44536c;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.teacher-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.teacher-select-btn {
+  width: 100%;
+  text-align: left;
+  border: 1.5px solid #d7dfed;
+  background: #f9fbff;
+  color: #16253d;
+  border-radius: 16px;
+  padding: 14px 14px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.teacher-select-btn:active {
+  transform: scale(0.995);
+}
+
+.teacher-select-btn-active {
+  border-color: #4d79ff;
+  background: #eef4ff;
+}
+
+.score-block {
+  margin-top: 18px;
+}
+
+.score-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #24344f;
+  margin-bottom: 10px;
+}
+
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.score-btn {
+  border: 1.5px solid #d7dfed;
+  background: #ffffff;
+  color: #1d2d47;
+  border-radius: 14px;
+  padding: 12px 0;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.score-btn-active {
+  border-color: #4d79ff;
+  background: #4d79ff;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(77, 121, 255, 0.22);
+}
+
+.comment-block {
+  margin-top: 18px;
+}
+
+.comment-textarea {
+  width: 100%;
+  resize: none;
+  border: 1.5px solid #d7dfed;
+  border-radius: 16px;
+  padding: 14px;
+  outline: none;
+  background: #ffffff;
+  color: #16253d;
+}
+
+.comment-textarea:focus {
+  border-color: #4d79ff;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.secondary-btn,
+.primary-btn {
+  flex: 1;
+  border: none;
+  border-radius: 16px;
+  padding: 14px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.secondary-btn {
+  background: #f2f5fa;
+  color: #1e2e49;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #4b76ff 0%, #6d90ff 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(75, 118, 255, 0.24);
+}
+
+.secondary-btn:active,
+.primary-btn:active {
+  transform: scale(0.99);
+}
+
+.secondary-btn:disabled,
+.primary-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.top-toast {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 34, 55, 0.96);
+  color: #ffffff;
+  padding: 12px 16px;
+  border-radius: 14px;
+  z-index: 1200;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 12px 28px rgba(15, 34, 55, 0.24);
+  animation: toastFade 0.18s ease;
+}
+
+@keyframes toastFade {
+  from {
+    transform: translateX(-50%) translateY(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
 @media (max-width: 560px) {
   .app-topbar {
     font-size: 24px;
@@ -289,5 +508,13 @@ body {
 
   .lesson-title {
     font-size: 17px;
+  }
+
+  .score-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .modal-actions {
+    flex-direction: row;
   }
 }

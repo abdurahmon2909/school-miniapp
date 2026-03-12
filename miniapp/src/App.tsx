@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 declare global {
@@ -7,6 +7,7 @@ declare global {
       WebApp?: {
         ready: () => void;
         expand: () => void;
+        close?: () => void;
         initDataUnsafe?: {
           user?: {
             id?: number;
@@ -41,6 +42,8 @@ type TodayLessonsResponse = {
 };
 
 const BACKEND_URL = "https://school-miniapp-production-c830.up.railway.app";
+const TODAY_LESSONS_ENDPOINT = `${BACKEND_URL}/today-lessons`;
+const RATE_ENDPOINT = `${BACKEND_URL}/rate-teacher`;
 
 function formatTime(time: string) {
   if (!time) return "";
@@ -83,6 +86,15 @@ export default function App() {
   const [data, setData] = useState<TodayLessonsResponse | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
 
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [selectedTeacher, setSelectedTeacher] = useState("");
+  const [scoreValue, setScoreValue] = useState<number | null>(null);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const [toastMessage, setToastMessage] = useState("");
+  const toastTimerRef = useRef<number | null>(null);
+
   const tgUser = getTelegramUser();
   const firstName = tgUser?.first_name || "Foydalanuvchi";
   const telegramId = tgUser?.id;
@@ -101,43 +113,131 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    async function loadTodayLessons() {
-      try {
-        setLoading(true);
-        setError("");
+    void loadTodayLessons();
 
-        if (!telegramId) {
-          throw new Error("Telegram user ID topilmadi");
-        }
-
-        const response = await fetch(`${BACKEND_URL}/today-lessons`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            telegram_id: telegramId,
-          }),
-        });
-
-        const json = await response.json();
-
-        if (!response.ok) {
-          throw new Error(json?.detail || "Backend xatolik qaytardi");
-        }
-
-        setData(json);
-      } catch (err: any) {
-        setError(err?.message || "Failed to fetch");
-      } finally {
-        setLoading(false);
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
       }
-    }
-
-    loadTodayLessons();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [telegramId]);
 
   const lessons = useMemo(() => data?.lessons || [], [data, nowTick]);
+
+  function showToast(message: string) {
+    setToastMessage(message);
+
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage("");
+    }, 1800);
+  }
+
+  async function loadTodayLessons() {
+    try {
+      setLoading(true);
+      setError("");
+
+      if (!telegramId) {
+        throw new Error("Telegram user ID topilmadi");
+      }
+
+      const response = await fetch(TODAY_LESSONS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          telegram_id: telegramId,
+        }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok) {
+        throw new Error(json?.detail || "Backend xatolik qaytardi");
+      }
+
+      setData(json);
+    } catch (err: any) {
+      setError(err?.message || "Failed to fetch");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openRateModal(lesson: Lesson) {
+    if (!lesson.poll_allowed || lesson.rated) return;
+
+    setSelectedLesson(lesson);
+    setSelectedTeacher(lesson.teachers[0] || "");
+    setScoreValue(null);
+    setComment("");
+  }
+
+  function closeRateModal() {
+    if (submitting) return;
+    setSelectedLesson(null);
+    setSelectedTeacher("");
+    setScoreValue(null);
+    setComment("");
+  }
+
+  async function submitRating() {
+    try {
+      if (!telegramId) {
+        throw new Error("Telegram ID topilmadi");
+      }
+
+      if (!selectedLesson) {
+        throw new Error("Dars tanlanmagan");
+      }
+
+      if (!selectedTeacher.trim()) {
+        throw new Error("O‘qituvchini tanlang");
+      }
+
+      if (scoreValue === null) {
+        throw new Error("Baho tanlang");
+      }
+
+      setSubmitting(true);
+
+      const payload = {
+        telegram_id: telegramId,
+        poll_id: selectedLesson.poll_id,
+        chosen_teacher: selectedTeacher.trim(),
+        score_value: scoreValue,
+        anonymous_comment: comment.trim(),
+      };
+
+      const response = await fetch(RATE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok) {
+        throw new Error(json?.detail || "Baholashda xatolik yuz berdi");
+      }
+
+      closeRateModal();
+      await loadTodayLessons();
+      showToast("Baholash yuborildi");
+    } catch (err: any) {
+      showToast(err?.message || "Xatolik yuz berdi");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -180,8 +280,7 @@ export default function App() {
           <div className="state-card">
             <div className="state-title">Bugun dars topilmadi</div>
             <div className="state-text">
-              Jadvalda bugungi kun uchun darslar yo‘q yoki class/weekday mos
-              kelmadi.
+              Jadvalda bugungi kun uchun darslar yo‘q.
             </div>
           </div>
         )}
@@ -203,28 +302,25 @@ export default function App() {
                     <div className="lesson-title-wrap">
                       <div className="lesson-title-row">
                         <h3 className="lesson-title">
-                          {lesson.lesson_number}. {lesson.subject_name || "Fan nomi yo‘q"}
+                          {lesson.lesson_number}.{" "}
+                          {lesson.subject_name || "Fan nomi yo‘q"}
                         </h3>
 
                         {current && <span className="live-badge">🟢 Hozir</span>}
                       </div>
 
                       <div className="lesson-time">
-                        {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
+                        {formatTime(lesson.start_time)} -{" "}
+                        {formatTime(lesson.end_time)}
                       </div>
                     </div>
 
                     <button
                       className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
-                      disabled={!lesson.poll_allowed}
-                      onClick={() => {
-                        if (!lesson.poll_allowed) return;
-                        alert(
-                          `Baholash oynasi keyin ulanadi.\n\nFan: ${lesson.subject_name}`
-                        );
-                      }}
+                      disabled={!lesson.poll_allowed || lesson.rated}
+                      onClick={() => openRateModal(lesson)}
                     >
-                      {lesson.rated ? "✓ Baholandi" : "⭐ Baholang"}
+                      {lesson.rated ? "✓ Baholangan" : "⭐ Baholang"}
                     </button>
                   </div>
 
@@ -253,6 +349,96 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {selectedLesson && (
+        <div className="modal-overlay" onClick={closeRateModal}>
+          <div className="rate-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">
+                  {selectedLesson.subject_name || "Fan"}
+                </h3>
+                <p className="modal-subtitle">O‘qituvchini tanlang</p>
+              </div>
+
+              <button className="icon-close-btn" onClick={closeRateModal}>
+                ×
+              </button>
+            </div>
+
+            <div className="teacher-select-list">
+              {selectedLesson.teachers.map((teacher) => {
+                const active = selectedTeacher === teacher;
+
+                return (
+                  <button
+                    key={teacher}
+                    type="button"
+                    className={`teacher-select-btn ${active ? "teacher-select-btn-active" : ""}`}
+                    onClick={() => setSelectedTeacher(teacher)}
+                  >
+                    {teacher}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="score-block">
+              <div className="score-label">Bahoni tanlang</div>
+
+              <div className="score-grid">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((score) => {
+                  const active = scoreValue === score;
+
+                  return (
+                    <button
+                      key={score}
+                      type="button"
+                      className={`score-btn ${active ? "score-btn-active" : ""}`}
+                      onClick={() => setScoreValue(score)}
+                    >
+                      {score}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="comment-block">
+              <textarea
+                className="comment-textarea"
+                placeholder="Izoh qoldiring..."
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                rows={4}
+                maxLength={500}
+              />
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={closeRateModal}
+                disabled={submitting}
+              >
+                Bekor qilish
+              </button>
+
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={submitRating}
+                disabled={submitting}
+              >
+                {submitting ? "Yuborilmoqda..." : "Yuborish"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toastMessage && <div className="top-toast">{toastMessage}</div>}
     </div>
   );
 }
