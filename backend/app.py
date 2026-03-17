@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, date
+from datetime import datetime
+from functools import lru_cache
 from typing import Any
 
 import gspread
@@ -15,22 +16,11 @@ from pydantic import BaseModel, Field
 GOOGLE_CREDS = os.getenv("GOOGLE_CREDS", "").strip()
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "").strip()
 
-if not GOOGLE_CREDS:
-    raise ValueError("GOOGLE_CREDS topilmadi")
-
-if not GOOGLE_SHEET_ID:
-    raise ValueError("GOOGLE_SHEET_ID topilmadi")
-
-
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 
-creds_info = json.loads(GOOGLE_CREDS)
-credentials = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-gc = gspread.authorize(credentials)
-spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
 
 app = FastAPI(title="School Mini App Backend")
 
@@ -55,8 +45,6 @@ WEEKDAY_MAP = {
 
 
 def now_local() -> datetime:
-    # Railway ham UTC bo‘lishi mumkin, shuning uchun qo‘lda +5 ishlatmaymiz.
-    # Frontendda vaqt brauzer bo‘yicha ketadi, backendga bugungi sana va weekday kerak.
     return datetime.now()
 
 
@@ -66,13 +54,6 @@ def today_weekday_uz() -> str:
 
 def today_iso() -> str:
     return now_local().strftime("%Y-%m-%d")
-
-
-def safe_ws(title: str):
-    try:
-        return spreadsheet.worksheet(title)
-    except Exception:
-        raise HTTPException(status_code=500, detail=f"'{title}' varaq topilmadi")
 
 
 def normalize(value: Any) -> str:
@@ -105,6 +86,38 @@ def to_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+@lru_cache(maxsize=1)
+def get_spreadsheet():
+    if not GOOGLE_CREDS:
+        raise HTTPException(status_code=500, detail="GOOGLE_CREDS topilmadi")
+
+    if not GOOGLE_SHEET_ID:
+        raise HTTPException(status_code=500, detail="GOOGLE_SHEET_ID topilmadi")
+
+    try:
+        creds_info = json.loads(GOOGLE_CREDS)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GOOGLE_CREDS JSON xato: {e}")
+
+    try:
+        credentials = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+        gc = gspread.authorize(credentials)
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
+        return spreadsheet
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Google Sheet ulanish xatosi: {e}")
+
+
+def safe_ws(title: str):
+    try:
+        spreadsheet = get_spreadsheet()
+        return spreadsheet.worksheet(title)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail=f"'{title}' varaq topilmadi")
+
+
 def get_all_records(ws_name: str) -> list[dict[str, Any]]:
     ws = safe_ws(ws_name)
     return ws.get_all_records()
@@ -119,7 +132,7 @@ def find_registration_by_telegram_id(telegram_id: int) -> dict[str, Any] | None:
 
 
 def get_next_poll_id() -> int:
-    rows = get_all_records("teacher_ratings")
+    rows = get_all_records("poll_answers")
     max_id = 0
     for row in rows:
         raw = normalize(row.get("id"))
@@ -186,7 +199,7 @@ def get_today_lessons_for_teacher(teacher_name: str) -> list[dict[str, Any]]:
 
 
 def get_today_ratings_for_user(telegram_id: int) -> list[dict[str, Any]]:
-    rows = get_all_records("teacher_ratings")
+    rows = get_all_records("poll_answers")
     today = today_iso()
 
     result = []
@@ -200,8 +213,6 @@ def get_today_ratings_for_user(telegram_id: int) -> list[dict[str, Any]]:
 
 
 def is_poll_allowed() -> bool:
-    # Пока простая логика: весь день можно.
-    # Если потом захочешь — добавим закрытие в 00:00 Asia/Tashkent и более строгую логику.
     return True
 
 
@@ -235,6 +246,11 @@ def root():
     return {"ok": True, "service": "school-miniapp-backend"}
 
 
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
 @app.post("/profile")
 def profile(payload: TelegramIdRequest):
     row = find_registration_by_telegram_id(payload.telegram_id)
@@ -264,8 +280,8 @@ def profile(payload: TelegramIdRequest):
 
 @app.get("/registration-options")
 def registration_options():
-    students_rows = get_all_records("students")
-    teachers_rows = get_all_records("teachers")
+    students_rows = get_all_records("students_list")
+    teachers_rows = get_all_records("teachers_list")
 
     classes_set: set[str] = set()
     students: list[dict[str, str]] = []
@@ -435,7 +451,6 @@ def today_lessons(payload: TelegramIdRequest):
         if not selected_name:
             raise HTTPException(status_code=400, detail="O‘qituvchi nomi topilmadi")
         base_lessons = get_today_lessons_for_teacher(selected_name)
-        # teacher uchun frontend class_name kutyapti — fan yoki teacher label ham berish mumkin
         class_name = class_name or "-"
     else:
         raise HTTPException(status_code=400, detail="Noto‘g‘ri role")
@@ -456,7 +471,11 @@ def today_lessons(payload: TelegramIdRequest):
                 continue
             matching_ratings.append(rating)
 
-        rated_teachers = [normalize(r.get("teacher_name")) for r in matching_ratings if normalize(r.get("teacher_name"))]
+        rated_teachers = [
+            normalize(r.get("teacher_name"))
+            for r in matching_ratings
+            if normalize(r.get("teacher_name"))
+        ]
         rated = len(rated_teachers) > 0
 
         result_lessons.append(
@@ -506,7 +525,7 @@ def submit_rating(payload: SubmitRatingRequest):
     if not is_poll_allowed():
         raise HTTPException(status_code=400, detail="Baholash vaqti yopilgan")
 
-    ws = safe_ws("teacher_ratings")
+    ws = safe_ws("poll_answers")
     rows = ws.get_all_records()
     today_str = today_iso()
 
@@ -549,3 +568,10 @@ def submit_rating(payload: SubmitRatingRequest):
         "ok": True,
         "message": "Baholash saqlandi",
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
