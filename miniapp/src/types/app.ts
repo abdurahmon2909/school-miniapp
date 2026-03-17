@@ -12,12 +12,13 @@ export type Lesson = {
   rated: boolean;
   rated_teachers: string[];
   poll_allowed: boolean;
+  class_name?: string;
 };
 
 export type TodayLessonsResponse = {
   telegram_id: number;
   role: UserRole;
-  selected_name: string;
+  selected_name?: string;
   class_name: string;
   date: string;
   weekday: string;
@@ -33,14 +34,18 @@ export type TeacherRating = {
 
 export type RegistrationProfile = {
   telegram_id: number;
+  full_name: string;
   role: UserRole;
-  selected_name: string;
   class_name: string;
-  subject_name: string;
+  subject: string;
+  phone: string;
   username: string;
-  first_name: string;
-  last_name: string;
-  rating?: TeacherRating | null;
+};
+
+export type MeResponse = {
+  ok: boolean;
+  registered: boolean;
+  profile: RegistrationProfile | null;
 };
 
 export type RegistrationStatusResponse = {

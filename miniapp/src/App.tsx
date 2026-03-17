@@ -10,31 +10,21 @@ import ZakovatTab from "./components/ZakovatTab";
 import type {
   AnnouncementsResponse,
   Lesson,
+  MeResponse,
   RegistrationProfile,
-  RegistrationStatusResponse,
   TabKey,
   TodayLessonsResponse,
+  TopTeachersResponse,
 } from "./types/app";
 
 import { getTelegramPhoto, getTelegramUser } from "./utils/telegram";
 
 const BACKEND_URL = "https://school-miniapp-production-c830.up.railway.app";
+const ME_ENDPOINT = `${BACKEND_URL}/me`;
 const TODAY_LESSONS_ENDPOINT = `${BACKEND_URL}/today-lessons`;
 const RATE_ENDPOINT = `${BACKEND_URL}/submit-rating`;
-const PROFILE_ENDPOINT = `${BACKEND_URL}/profile`;
 const ANNOUNCEMENTS_ENDPOINT = `${BACKEND_URL}/announcements`;
 const TOP_TEACHERS_ENDPOINT = `${BACKEND_URL}/top-teachers`;
-
-type TopTeacher = {
-  teacher_name: string;
-  avg_score: number;
-  total_votes: number;
-  last_updated?: string;
-};
-
-type TopTeachersResponse = {
-  top_teachers?: TopTeacher[];
-};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
@@ -57,11 +47,10 @@ export default function App() {
   const [profile, setProfile] = useState<RegistrationProfile | null>(null);
 
   const [remoteAnnouncements, setRemoteAnnouncements] = useState<string[]>([]);
-  const [topTeachers, setTopTeachers] = useState<TopTeacher[]>([]);
+  const [topTeachers, setTopTeachers] = useState<TopTeachersResponse["top_teachers"]>([]);
 
   const tgUser = getTelegramUser();
   const photoUrl = getTelegramPhoto();
-
 
   const username = tgUser?.username || "";
   const telegramId = tgUser?.id;
@@ -91,6 +80,7 @@ export default function App() {
 
   useEffect(() => {
     if (!profile || !telegramId) return;
+
     void loadTodayLessons();
     void loadAnnouncements();
     void loadTopTeachers();
@@ -154,14 +144,13 @@ export default function App() {
     try {
       setCheckingProfile(true);
 
-      const response = await fetch(PROFILE_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          telegram_id: telegramId,
-        }),
+      if (!telegramId) {
+        setProfile(null);
+        return;
+      }
+
+      const response = await fetch(`${ME_ENDPOINT}?telegram_id=${telegramId}`, {
+        method: "GET",
       });
 
       if (!response.ok) {
@@ -169,9 +158,9 @@ export default function App() {
         return;
       }
 
-      const json = (await response.json()) as RegistrationStatusResponse;
+      const json = (await response.json()) as MeResponse;
 
-      if (json?.registered && json?.profile) {
+      if (json?.ok && json?.registered && json?.profile) {
         setProfile(json.profile);
       } else {
         setProfile(null);
@@ -395,41 +384,39 @@ export default function App() {
   }
 
   if (!profile) {
-  return (
-    <div className="app-shell">
-      <main className="app-content">
-        <div className="page">
-          <div className="registration-card registration-locked-card">
-            <div className="registration-top">
-              <div className="registration-school">155-Maktab</div>
-              <div className="registration-title">Ro‘yxatdan o‘tish</div>
-              <div className="registration-subtitle">
-                Mini App’dan foydalanish uchun avval Telegram botda ro‘yxatdan o‘ting.
+    return (
+      <div className="app-shell">
+        <main className="app-content">
+          <div className="page">
+            <div className="registration-card registration-locked-card">
+              <div className="registration-top">
+                <div className="registration-school">155-Maktab</div>
+                <div className="registration-title">Ro‘yxatdan o‘tish</div>
+                <div className="registration-subtitle">
+                  Mini App’dan foydalanish uchun avval Telegram botda ro‘yxatdan o‘ting.
+                </div>
               </div>
-            </div>
 
-            <div className="registration-info-box">
-              <div className="registration-info-line">
-                1. Telegram botga kiring
+              <div className="registration-info-box">
+                <div className="registration-info-line">1. Telegram botga kiring</div>
+                <div className="registration-info-line">
+                  2. <strong>/start</strong> bosing
+                </div>
+                <div className="registration-info-line">
+                  3. O‘zingizni tanlab ro‘yxatdan o‘ting
+                </div>
+                <div className="registration-info-line">
+                  4. So‘ng Mini App’ni qayta oching
+                </div>
               </div>
-              <div className="registration-info-line">
-                2. <strong>/start</strong> bosing
-              </div>
-              <div className="registration-info-line">
-                3. O‘zingizni tanlab ro‘yxatdan o‘ting
-              </div>
-              <div className="registration-info-line">
-                4. So‘ng Mini App’ni qayta oching
-              </div>
-            </div>
 
-            <div className="registration-bot-note">@maktab155bot</div>
+              <div className="registration-bot-note">@maktab155bot</div>
+            </div>
           </div>
-        </div>
-      </main>
-    </div>
-  );
-}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

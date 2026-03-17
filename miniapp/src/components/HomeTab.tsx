@@ -1,13 +1,12 @@
-import type { Lesson, RegistrationProfile } from "../types/app";
-import { formatTime, getCurrentLesson, getDayStatus, getNextLesson, isCurrentLesson } from "../utils/times";
+import type { Lesson, RegistrationProfile, TopTeacher } from "../types/app";
+import {
+  formatTime,
+  getCurrentLesson,
+  getDayStatus,
+  getNextLesson,
+  isCurrentLesson,
+} from "../utils/times";
 import { getInitials } from "../utils/telegram";
-
-type TopTeacher = {
-  teacher_name: string;
-  avg_score: number;
-  total_votes: number;
-  last_updated?: string;
-};
 
 type Props = {
   loading: boolean;
@@ -41,87 +40,29 @@ export default function HomeTab({
   const currentLesson = getCurrentLesson(lessons);
   const nextLesson = getNextLesson(lessons);
   const dayStatus = getDayStatus(lessons);
-  const initials = getInitials(undefined, undefined, profile.selected_name);
 
   const roleLabel = profile.role === "teacher" ? "O‘qituvchi" : "O‘quvchi";
-  const subjectInfo = profile.subject_name || "Fan ko‘rsatilmagan";
-  const classInfo = className || profile.class_name || "-";
+  const profileName = profile.full_name || "Foydalanuvchi";
 
-  function renderLessonCard(lesson: Lesson, compact = false) {
-    const current = isCurrentLesson(lesson.start_time, lesson.end_time);
+  const profileSubInfo =
+    profile.role === "teacher"
+      ? profile.subject || "Fan kiritilmagan"
+      : className || profile.class_name || "Sinf kiritilmagan";
 
-    return (
-      <div
-        key={lesson.poll_id || `${lesson.lesson_number}-${lesson.subject_name}`}
-        className={`schedule-item ${current ? "schedule-item-current" : ""}`}
-      >
-        <div className="schedule-time">{formatTime(lesson.start_time)}</div>
-
-        <div className="schedule-body">
-          <div className="schedule-title-row">
-            <div className="schedule-subject">{lesson.subject_name || "Fan nomi yo‘q"}</div>
-            {current && <span className="current-pill">Hozir</span>}
-          </div>
-
-          <div className="schedule-teacher-list">
-            {lesson.teachers.length > 0 ? (
-              lesson.teachers.map((teacher, index) => (
-                <div className="schedule-teacher" key={`${teacher}-${index}`}>
-                  {teacher}
-                </div>
-              ))
-            ) : (
-              <div className="schedule-teacher schedule-teacher-empty">O‘qituvchi ko‘rsatilmagan</div>
-            )}
-          </div>
-
-          {!compact && (
-            <div className="schedule-range">
-              {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function renderTopTeachersCard() {
-    if (profile.role === "teacher") {
-      return (
-        <div className="info-stat-card">
-          <div className="info-stat-label">Fan</div>
-          <div className="info-stat-value small-value">{subjectInfo}</div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="info-stat-card">
-        <div className="info-stat-label">TOP o‘qituvchilar</div>
-
-        {topTeachers.length === 0 ? (
-          <div className="info-stat-value small-value">Hali reyting yo‘q</div>
-        ) : (
-          <div className="top-teachers-mini-list">
-            {topTeachers.slice(0, 3).map((teacher, index) => (
-              <div className="top-teacher-mini-row" key={`${teacher.teacher_name}-${index}`}>
-                <span className="top-teacher-mini-name">
-                  {index + 1}. {teacher.teacher_name}
-                </span>
-                <span className="top-teacher-mini-score">
-                  {Number(teacher.avg_score || 0).toFixed(1)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const topTeachersToShow =
+    topTeachers.length > 0
+      ? topTeachers.slice(0, 5).map((item) => ({
+          name: item.teacher_name,
+          score: Number(item.avg_score || 0),
+        }))
+      : [
+          { name: "O‘qituvchilar reytingi ulanmoqda", score: 0 },
+          { name: "Ma’lumot yo‘q", score: 0 },
+        ];
 
   return (
     <>
-      <div className="main-hero">
+      <section className="main-hero">
         <div className="main-hero-top">
           <div className="main-hero-left">
             <div className="main-school-id">155-Maktab</div>
@@ -132,7 +73,7 @@ export default function HomeTab({
                 <div className="main-hero-marquee-seq">
                   {announcements.map((item, index) => (
                     <span className="main-hero-news-item" key={`a-${index}`}>
-                      📣 {item}
+                      {item}
                     </span>
                   ))}
                 </div>
@@ -140,7 +81,7 @@ export default function HomeTab({
                 <div className="main-hero-marquee-seq" aria-hidden="true">
                   {announcements.map((item, index) => (
                     <span className="main-hero-news-item" key={`b-${index}`}>
-                      📣 {item}
+                      {item}
                     </span>
                   ))}
                 </div>
@@ -150,92 +91,132 @@ export default function HomeTab({
 
           <div className="main-profile-short">
             <div className="main-profile-text">
-              <div className="main-profile-name">{profile.selected_name}</div>
+              <div className="main-profile-name">{profileName}</div>
               <div className="main-profile-role">{roleLabel}</div>
               <div className="main-profile-average">{studentAverageGradeText}</div>
-              {profile.role !== "teacher" && <div className="profile-class-line">{classInfo}</div>}
-              {profile.role === "teacher" && <div className="main-profile-subinfo">{subjectInfo}</div>}
+              <div className="main-profile-subinfo">{profileSubInfo}</div>
             </div>
 
             <div className="main-avatar-ring">
-              {photoUrl ? (
-                <img src={photoUrl} alt="avatar" className="main-avatar-img" />
-              ) : (
-                <div className="main-avatar">{initials}</div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="stats-grid">
-        <div className="info-stat-card">
-          <div className="info-stat-label">Holat</div>
-          <div className="info-stat-value small-value">{dayStatus}</div>
-        </div>
-
-        {renderTopTeachersCard()}
-      </div>
-
-      <div className="big-section-card next-lesson-card">
-        <div className="big-section-head">
-          <h2>Keyingi dars</h2>
-        </div>
-
-        {!nextLesson ? (
-          <div className="empty-inline-text">Keyingi dars topilmadi</div>
-        ) : (
-          <div className="next-lesson-row">
-            <div className="next-lesson-time">
-              {formatTime(nextLesson.start_time)} - {formatTime(nextLesson.end_time)}
-            </div>
-            <div className="next-lesson-main">
-              <div className="next-lesson-subject">{nextLesson.subject_name}</div>
-              <div className="next-lesson-teacher">
-                {nextLesson.teachers?.join(", ") || "O‘qituvchi ko‘rsatilmagan"}
+              <div className="main-avatar">
+                {photoUrl ? (
+                  <img className="main-avatar-img" src={photoUrl} alt={profileName} />
+                ) : (
+                  getInitials(profileName)
+                )}
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      </section>
 
-      <div className="big-section-card">
+      <section className="stats-grid">
+        <div className="info-stat-card">
+          <div className="info-stat-label">Bugungi holat</div>
+          <div className="info-stat-value small-value">
+            {loading ? "Yuklanmoqda..." : dayStatus}
+          </div>
+        </div>
+
+        <div className="info-stat-card">
+          <div className="info-stat-label">
+            {profile.role === "teacher" ? "Fan" : "Sinf"}
+          </div>
+          <div className="info-stat-value small-value">
+            {profile.role === "teacher"
+              ? profile.subject || "-"
+              : className || profile.class_name || "-"}
+          </div>
+        </div>
+      </section>
+
+      <section className="big-section-card">
         <div className="big-section-head">
-          <h2>Bugungi jadval</h2>
-          <button type="button" className="section-link-btn" onClick={onOpenSchedule}>
+          <h2>Bugungi darslar</h2>
+          <button className="section-link-btn" onClick={onOpenSchedule}>
             Barchasi
           </button>
         </div>
 
-        {loading ? (
-          <div className="state-card inside-state-card">
-            <div className="state-title">Yuklanmoqda...</div>
+        {error ? (
+          <div className="empty-inline-text">{error}</div>
+        ) : loading ? (
+          <div className="empty-inline-text">Darslar yuklanmoqda...</div>
+        ) : currentLesson ? (
+          <div className="next-lesson-row">
+            <div className="next-lesson-time">
+              {formatTime(currentLesson.start_time)} - {formatTime(currentLesson.end_time)}
+            </div>
+
+            <div>
+              <div className="next-lesson-subject">{currentLesson.subject_name}</div>
+              <div className="next-lesson-teacher">
+                {currentLesson.teachers.join(", ") || "O‘qituvchi ko‘rsatilmagan"}
+              </div>
+            </div>
           </div>
-        ) : error ? (
-          <div className="state-card error-card inside-state-card">
-            <div className="state-title">Xatolik</div>
-            <div className="state-text">{error}</div>
-          </div>
-        ) : lessons.length === 0 ? (
-          <div className="state-card inside-state-card">
-            <div className="state-title">Bugun dars topilmadi</div>
-            <div className="state-text">Jadvalda bugungi kun uchun darslar yo‘q.</div>
+        ) : nextLesson ? (
+          <div className="next-lesson-row">
+            <div className="next-lesson-time">
+              {formatTime(nextLesson.start_time)} - {formatTime(nextLesson.end_time)}
+            </div>
+
+            <div>
+              <div className="next-lesson-subject">{nextLesson.subject_name}</div>
+              <div className="next-lesson-teacher">
+                {nextLesson.teachers.join(", ") || "O‘qituvchi ko‘rsatilmagan"}
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="schedule-list">{lessons.slice(0, 4).map((lesson) => renderLessonCard(lesson, true))}</div>
+          <div className="empty-inline-text">Bugun darslar yo‘q</div>
         )}
-      </div>
 
-      <div className="bottom-info-grid">
+        {!!lessons.length && (
+          <div className="schedule-list schedule-list-full">
+            {lessons.slice(0, 3).map((lesson) => {
+              const current = isCurrentLesson(lesson);
+
+              return (
+                <div
+                  key={`${lesson.lesson_number}-${lesson.subject_name}`}
+                  className={`schedule-item ${current ? "schedule-item-current" : ""}`}
+                >
+                  <div className="schedule-time">{lesson.lesson_number}</div>
+
+                  <div className="schedule-body">
+                    <div className="schedule-title-row">
+                      <div className="schedule-subject">{lesson.subject_name}</div>
+                      {current && <div className="current-pill">Hozir</div>}
+                    </div>
+
+                    <div className="schedule-range">
+                      {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
+                    </div>
+
+                    <div className="schedule-teacher-list">
+                      {lesson.teachers.map((teacher, idx) => (
+                        <div className="schedule-teacher" key={`${teacher}-${idx}`}>
+                          {teacher}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="bottom-info-grid">
         <div className="mini-info-card">
           <div className="mini-info-title">Zakovat TOP</div>
 
           <div className="mini-list">
             {fakeZakovatTop.map((item, index) => (
               <div className="mini-list-row" key={`${item.class_name}-${index}`}>
-                <span>
-                  {index + 1}. {item.class_name}
-                </span>
+                <span>{item.class_name}</span>
                 <strong>{item.points}</strong>
               </div>
             ))}
@@ -243,20 +224,22 @@ export default function HomeTab({
         </div>
 
         <div className="mini-info-card">
-          <div className="mini-info-title">E'lonlar</div>
+          <div className="mini-info-title">TOP ustozlar</div>
 
-          <div className="announcement-list">
-            {announcements.slice(0, 3).map((item, index) => (
-              <div className="announcement-line" key={`${item}-${index}`}>
-                {item}
+          <div className="top-teachers-mini-list">
+            {topTeachersToShow.map((item, index) => (
+              <div className="top-teacher-mini-row" key={`${item.name}-${index}`}>
+                <div className="top-teacher-mini-name">{item.name}</div>
+                <div className="top-teacher-mini-score">
+                  {item.score > 0 ? item.score.toFixed(1) : "—"}
+                </div>
               </div>
             ))}
           </div>
         </div>
-      </div>
+      </section>
 
-      {weekday && <div className="home-footer-note">{weekday} kuni darslar ko‘rsatilgan</div>}
-      {currentLesson && <div className="home-footer-note">Hozir {currentLesson.lesson_number}-dars davom etmoqda</div>}
+      {weekday && <div className="home-footer-note">{weekday}</div>}
     </>
   );
 }
