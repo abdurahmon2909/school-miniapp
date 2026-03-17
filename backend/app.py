@@ -206,11 +206,26 @@ def build_profile_from_users_row(row: dict[str, Any]) -> RegistrationProfile:
         "0",
     )
 
+    first_name = find_first_value(
+        row,
+        ["first_name", "firstname", "ism"],
+        "",
+    )
+
+    last_name = find_first_value(
+        row,
+        ["last_name", "lastname", "familiya"],
+        "",
+    )
+
     full_name = find_first_value(
         row,
         ["full_name", "name", "fio", "FIO", "ism_familiya", "selected_name"],
         "",
     )
+
+    if not full_name:
+        full_name = f"{first_name} {last_name}".strip()
 
     role = find_first_value(
         row,
@@ -253,7 +268,6 @@ def build_profile_from_users_row(row: dict[str, Any]) -> RegistrationProfile:
         phone=phone,
         username=username,
     )
-
 
 def find_registration_by_telegram_id(telegram_id: int) -> dict[str, Any] | None:
     rows = get_all_records("registrations")
