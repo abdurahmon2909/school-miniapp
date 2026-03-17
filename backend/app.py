@@ -604,6 +604,12 @@ def me(telegram_id: int = Query(..., description="Telegram foydalanuvchi IDsi"))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"/me xatolik: {type(e).__name__}: {e}")
 
+@app.get("/debug/env")
+def debug_env():
+    return {
+        "google_sheet_id": GOOGLE_SHEET_ID,
+        "google_sheet_id_length": len(GOOGLE_SHEET_ID),
+    }
 
 @app.post("/profile")
 def profile(payload: TelegramIdRequest):
