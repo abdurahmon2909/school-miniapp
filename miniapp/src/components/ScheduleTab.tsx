@@ -23,79 +23,82 @@ export default function ScheduleTab({
       <div className="inner-page-head">
         <div className="inner-page-title">Dars jadvali</div>
         <div className="inner-page-subtitle">
-          {weekday || "Bugungi kun"}
-          {className ? ` • ${className}` : ""}
+          {[weekday, className].filter(Boolean).join(" • ")}
         </div>
       </div>
 
-      <div className="big-section-card">
+      <section className="schedule-page-list">
         {error ? (
-          <div className="empty-inline-text">{error}</div>
+          <div className="state-card inside-state-card error-card">
+            <div className="state-text">{error}</div>
+          </div>
         ) : loading ? (
-          <div className="empty-inline-text">Jadval yuklanmoqda...</div>
+          <div className="state-card inside-state-card">
+            <div className="state-text">Darslar yuklanmoqda...</div>
+          </div>
         ) : lessons.length === 0 ? (
-          <div className="empty-inline-text">Bugun darslar yo‘q</div>
+          <div className="state-card inside-state-card">
+            <div className="state-text">Bugun darslar yo‘q</div>
+          </div>
         ) : (
-          <div className="schedule-list">
-            {lessons.map((lesson) => {
-              const current = isCurrentLesson(lesson);
-              const canRate = lesson.poll_allowed && !lesson.rated;
+          lessons.map((lesson) => {
+            const current = isCurrentLesson(lesson);
+            const canRate = lesson.poll_allowed && !lesson.rated;
 
-              return (
-                <div
-                  key={`${lesson.lesson_number}-${lesson.subject_name}`}
-                  className={`schedule-item ${current ? "schedule-item-current" : ""}`}
-                >
-                  <div className="schedule-time">{lesson.lesson_number}</div>
+            return (
+              <div
+                key={`${lesson.lesson_number}-${lesson.subject_name}`}
+                className={`schedule-page-card ${current ? "schedule-page-card-current" : ""}`}
+              >
+                <div className="schedule-page-card-left">
+                  <div className="schedule-page-lesson-number">{lesson.lesson_number}</div>
+                </div>
 
-                  <div className="schedule-body">
-                    <div className="schedule-title-row">
-                      <div className="schedule-subject">{lesson.subject_name}</div>
-                      {current && <div className="current-pill">Hozir</div>}
-                    </div>
+                <div className="schedule-page-card-body">
+                  <div className="schedule-page-card-head">
+                    <div className="schedule-page-subject">{lesson.subject_name}</div>
+                    {current && <div className="current-pill">Hozir</div>}
+                  </div>
 
-                    <div className="schedule-range">
-                      {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
-                    </div>
+                  <div className="schedule-page-time">
+                    {formatTime(lesson.start_time)} - {formatTime(lesson.end_time)}
+                  </div>
 
-                    <div className="schedule-teacher-list">
-                      {lesson.teachers.length > 0 ? (
-                        lesson.teachers.map((teacher, index) => (
-                          <div className="schedule-teacher" key={`${teacher}-${index}`}>
-                            {teacher}
-                          </div>
-                        ))
-                      ) : (
-                        <div className="schedule-teacher schedule-teacher-empty">
-                          O‘qituvchi ko‘rsatilmagan
+                  <div className="schedule-page-teachers">
+                    {lesson.teachers.length > 0 ? (
+                      lesson.teachers.map((teacher, index) => (
+                        <div className="schedule-page-teacher" key={`${teacher}-${index}`}>
+                          {teacher}
                         </div>
-                      )}
-                    </div>
-
-                    {lesson.rated && lesson.rated_teachers.length > 0 && (
-                      <div className="rated-info">
-                        Baholangan: {lesson.rated_teachers.join(", ")}
-                      </div>
-                    )}
-
-                    {lesson.poll_allowed && (
-                      <div className="lesson-actions-row">
-                        <button
-                          className={`rate-btn ${lesson.rated ? "rated-btn" : ""}`}
-                          disabled={!canRate}
-                          onClick={() => onOpenRateModal(lesson)}
-                        >
-                          {lesson.rated ? "Baholangan" : "Baholash"}
-                        </button>
+                      ))
+                    ) : (
+                      <div className="schedule-page-teacher schedule-teacher-empty">
+                        O‘qituvchi ko‘rsatilmagan
                       </div>
                     )}
                   </div>
+
+                  <div className="schedule-page-actions">
+                    {lesson.rated ? (
+                      <button className="rate-btn rated-btn" disabled>
+                        Baholangan
+                      </button>
+                    ) : (
+                      <button
+                        className="rate-btn"
+                        disabled={!canRate}
+                        onClick={() => onOpenRateModal(lesson)}
+                      >
+                        Baholash
+                      </button>
+                    )}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })
         )}
-      </div>
+      </section>
     </>
   );
 }

@@ -1,11 +1,5 @@
 import type { Lesson, RegistrationProfile, TopTeacher } from "../types/app";
-import {
-  formatTime,
-  getCurrentLesson,
-  getDayStatus,
-  getNextLesson,
-  isCurrentLesson,
-} from "../utils/times";
+import { formatTime, isCurrentLesson } from "../utils/times";
 import { getInitials } from "../utils/telegram";
 
 type Props = {
@@ -37,38 +31,31 @@ export default function HomeTab({
   topTeachers = [],
   onOpenSchedule,
 }: Props) {
-  const currentLesson = getCurrentLesson(lessons);
-  const nextLesson = getNextLesson(lessons);
-  const dayStatus = getDayStatus(lessons);
-
   const roleLabel = profile.role === "teacher" ? "O‘qituvchi" : "O‘quvchi";
   const profileName = profile.full_name || "Foydalanuvchi";
 
   const profileSubInfo =
     profile.role === "teacher"
       ? profile.subject || "Fan kiritilmagan"
-      : className || profile.class_name || "Sinf kiritilmagan";
+      : className || profile.class_name || "";
 
-  const topTeachersToShow =
-    topTeachers.length > 0
-      ? topTeachers.slice(0, 5).map((item) => ({
-          name: item.teacher_name,
-          score: Number(item.avg_score || 0),
-        }))
-      : [
-          { name: "O‘qituvchilar reytingi ulanmoqda", score: 0 },
-          { name: "Ma’lumot yo‘q", score: 0 },
-        ];
+  const topTeachersToShow = topTeachers
+    .filter((item) => item.teacher_name?.trim())
+    .slice(0, 5)
+    .map((item) => ({
+      name: item.teacher_name,
+      score: Number(item.avg_score || 0),
+    }));
 
   return (
     <>
-      <section className="main-hero compact-hero">
-        <div className="main-hero-top compact-hero-top">
+      <section className="main-hero main-hero-compact">
+        <div className="main-hero-top main-hero-top-compact">
           <div className="main-hero-left">
             <div className="main-school-id">155-Maktab</div>
             <div className="main-hero-title">School tizimi</div>
 
-            <div className="main-hero-marquee">
+            <div className="main-hero-marquee compact-marquee">
               <div className="main-hero-marquee-track">
                 <div className="main-hero-marquee-seq">
                   {announcements.map((item, index) => (
@@ -89,17 +76,21 @@ export default function HomeTab({
             </div>
           </div>
 
-          <div className="main-profile-short top-right-profile">
-            <div className="main-profile-text profile-text-right">
+          <div className="main-profile-short main-profile-short-compact">
+            <div className="main-profile-text main-profile-text-compact">
               <div className="main-profile-name">{profileName}</div>
               <div className="main-profile-role">{roleLabel}</div>
+
               {profile.role !== "teacher" && (
                 <div className="main-profile-average">{studentAverageGradeText}</div>
               )}
-              <div className="main-profile-subinfo">{profileSubInfo}</div>
+
+              {!!profileSubInfo && (
+                <div className="main-profile-subinfo">{profileSubInfo}</div>
+              )}
             </div>
 
-            <div className="main-avatar-ring compact-avatar-ring">
+            <div className="main-avatar-ring main-avatar-ring-compact">
               <div className="main-avatar">
                 {photoUrl ? (
                   <img className="main-avatar-img" src={photoUrl} alt={profileName} />
@@ -112,28 +103,25 @@ export default function HomeTab({
         </div>
       </section>
 
-      <section className="stats-grid single-stat-grid">
-        <div className="info-stat-card">
-          <div className="info-stat-label">Bugungi holat</div>
-          <div className="info-stat-value small-value">
-            {loading ? "Yuklanmoqda..." : dayStatus}
-          </div>
-        </div>
-
+      <section className="stats-grid single-card-grid">
         <div className="info-stat-card compact-top-teachers-card">
           <div className="info-stat-label">Top 5 Ustozlar</div>
 
-          <div className="top-teachers-inline-list">
-            {topTeachersToShow.slice(0, 5).map((item, index) => (
-              <div className="top-teacher-inline-row" key={`${item.name}-${index}`}>
-                <span className="top-teacher-inline-rank">{index + 1}.</span>
-                <span className="top-teacher-inline-name">{item.name}</span>
-                <span className="top-teacher-inline-score">
-                  {item.score > 0 ? item.score.toFixed(1) : "—"}
-                </span>
-              </div>
-            ))}
-          </div>
+          {topTeachersToShow.length > 0 ? (
+            <div className="top-teachers-inline-list">
+              {topTeachersToShow.map((item, index) => (
+                <div className="top-teacher-inline-row" key={`${item.name}-${index}`}>
+                  <span className="top-teacher-inline-rank">{index + 1}.</span>
+                  <span className="top-teacher-inline-name">{item.name}</span>
+                  <span className="top-teacher-inline-score">
+                    {item.score > 0 ? item.score.toFixed(1) : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-inline-text">Reyting hali chiqmagan</div>
+          )}
         </div>
       </section>
 
@@ -149,37 +137,9 @@ export default function HomeTab({
           <div className="empty-inline-text">{error}</div>
         ) : loading ? (
           <div className="empty-inline-text">Darslar yuklanmoqda...</div>
-        ) : currentLesson ? (
-          <div className="next-lesson-row">
-            <div className="next-lesson-time">
-              {formatTime(currentLesson.start_time)} - {formatTime(currentLesson.end_time)}
-            </div>
-
-            <div>
-              <div className="next-lesson-subject">{currentLesson.subject_name}</div>
-              <div className="next-lesson-teacher">
-                {currentLesson.teachers.join(", ") || "O‘qituvchi ko‘rsatilmagan"}
-              </div>
-            </div>
-          </div>
-        ) : nextLesson ? (
-          <div className="next-lesson-row">
-            <div className="next-lesson-time">
-              {formatTime(nextLesson.start_time)} - {formatTime(nextLesson.end_time)}
-            </div>
-
-            <div>
-              <div className="next-lesson-subject">{nextLesson.subject_name}</div>
-              <div className="next-lesson-teacher">
-                {nextLesson.teachers.join(", ") || "O‘qituvchi ko‘rsatilmagan"}
-              </div>
-            </div>
-          </div>
-        ) : (
+        ) : lessons.length === 0 ? (
           <div className="empty-inline-text">Bugun darslar yo‘q</div>
-        )}
-
-        {!!lessons.length && (
+        ) : (
           <div className="schedule-list schedule-list-full">
             {lessons.slice(0, 3).map((lesson) => {
               const current = isCurrentLesson(lesson);
