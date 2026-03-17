@@ -573,15 +573,36 @@ def debug_sheets():
     return {"ok": True, "sheets": titles}
 
 
-@app.get("/me", response_model=MeResponse)
+@app.get("/me")
 def me(telegram_id: int = Query(..., description="Telegram foydalanuvchi IDsi")):
-    row = find_user_by_telegram_id_in_users(telegram_id)
+    try:
+        row = find_user_by_telegram_id_in_users(telegram_id)
 
-    if not row:
-        return MeResponse(ok=True, registered=False, profile=None)
+        if not row:
+            return {
+                "ok": True,
+                "registered": False,
+                "profile": None,
+            }
 
-    profile = build_profile_from_users_row(row)
-    return MeResponse(ok=True, registered=True, profile=profile)
+        profile = build_profile_from_users_row(row)
+
+        return {
+            "ok": True,
+            "registered": True,
+            "profile": {
+                "telegram_id": profile.telegram_id,
+                "full_name": profile.full_name,
+                "role": profile.role,
+                "class_name": profile.class_name,
+                "subject": profile.subject,
+                "phone": profile.phone,
+                "username": profile.username,
+            },
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"/me xatolik: {type(e).__name__}: {e}")
 
 
 @app.post("/profile")
