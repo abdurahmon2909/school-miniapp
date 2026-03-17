@@ -397,20 +397,41 @@ export default function App() {
   }
 
   if (!profile) {
-    return (
-      <RegistrationGate
-        telegramId={telegramId}
-        firstName={firstName}
-        lastName={lastName}
-        username={username}
-        backendUrl={BACKEND_URL}
-        onRegistered={(newProfile) => {
-          setProfile(newProfile);
-          setCheckingProfile(false);
-        }}
-      />
-    );
-  }
+  return (
+    <div className="app-shell">
+      <main className="app-content">
+        <div className="page">
+          <div className="registration-card registration-locked-card">
+            <div className="registration-top">
+              <div className="registration-school">155-Maktab</div>
+              <div className="registration-title">Ro‘yxatdan o‘tish</div>
+              <div className="registration-subtitle">
+                Mini App’dan foydalanish uchun avval Telegram botda ro‘yxatdan o‘ting.
+              </div>
+            </div>
+
+            <div className="registration-info-box">
+              <div className="registration-info-line">
+                1. Telegram botga kiring
+              </div>
+              <div className="registration-info-line">
+                2. <strong>/start</strong> bosing
+              </div>
+              <div className="registration-info-line">
+                3. O‘zingizni tanlab ro‘yxatdan o‘ting
+              </div>
+              <div className="registration-info-line">
+                4. So‘ng Mini App’ni qayta oching
+              </div>
+            </div>
+
+            <div className="registration-bot-note">@maktab155bot</div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
 
   return (
     <div className="app-shell">

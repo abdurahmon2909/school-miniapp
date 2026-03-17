@@ -929,3 +929,32 @@ img {
     width: 100%;
   }
 }
+.registration-locked-card {
+  max-width: 560px;
+  margin: 40px auto 0;
+}
+
+.registration-info-box {
+  margin-top: 18px;
+  background: #f6f9ff;
+  border: 1px solid #dbe7fb;
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.registration-info-line {
+  font-size: 14px;
+  color: #45617f;
+  line-height: 1.45;
+}
+
+.registration-bot-note {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #245fdb;
+}
