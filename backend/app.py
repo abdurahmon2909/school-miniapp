@@ -611,6 +611,35 @@ def debug_env():
         "google_sheet_id_length": len(GOOGLE_SHEET_ID),
     }
 
+@app.get("/debug/open-sheet")
+def debug_open_sheet():
+    try:
+        spreadsheet = get_spreadsheet()
+        return {
+            "ok": True,
+            "title": spreadsheet.title,
+            "sheets": [ws.title for ws in spreadsheet.worksheets()],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"/debug/open-sheet xatolik: {type(e).__name__}: {e}")
+
+@app.get("/debug/creds")
+def debug_creds():
+    try:
+        creds_info = json.loads(GOOGLE_CREDS)
+        return {
+            "ok": True,
+            "keys_present": sorted(list(creds_info.keys())),
+            "type": str(creds_info.get("type", "")),
+            "project_id": str(creds_info.get("project_id", "")),
+            "client_email": str(creds_info.get("client_email", "")),
+            "private_key_starts_ok": str(creds_info.get("private_key", "")).startswith("-----BEGIN PRIVATE KEY-----"),
+            "private_key_contains_backslash_n": "\\n" in str(creds_info.get("private_key", "")),
+            "sheet_id": GOOGLE_SHEET_ID,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"/debug/creds xatolik: {type(e).__name__}: {e}")
+
 @app.post("/profile")
 def profile(payload: TelegramIdRequest):
     row = find_registration_by_telegram_id(payload.telegram_id)
