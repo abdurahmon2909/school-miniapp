@@ -2,6 +2,13 @@ import type { Lesson, RegistrationProfile } from "../types/app";
 import { formatTime, getCurrentLesson, getDayStatus, getNextLesson, isCurrentLesson } from "../utils/times";
 import { getInitials } from "../utils/telegram";
 
+type TopTeacher = {
+  teacher_name: string;
+  avg_score: number;
+  total_votes: number;
+  last_updated?: string;
+};
+
 type Props = {
   loading: boolean;
   error: string;
@@ -13,6 +20,7 @@ type Props = {
   studentAverageGradeText: string;
   announcements: string[];
   fakeZakovatTop: { class_name: string; points: number }[];
+  topTeachers?: TopTeacher[];
   onOpenSchedule: () => void;
 };
 
@@ -27,6 +35,7 @@ export default function HomeTab({
   studentAverageGradeText,
   announcements,
   fakeZakovatTop,
+  topTeachers = [],
   onOpenSchedule,
 }: Props) {
   const currentLesson = getCurrentLesson(lessons);
@@ -35,10 +44,8 @@ export default function HomeTab({
   const initials = getInitials(undefined, undefined, profile.selected_name);
 
   const roleLabel = profile.role === "teacher" ? "O‘qituvchi" : "O‘quvchi";
-  const subInfo =
-    profile.role === "teacher"
-      ? profile.subject_name || "Fan ko‘rsatilmagan"
-      : className || profile.class_name || "-";
+  const subjectInfo = profile.subject_name || "Fan ko‘rsatilmagan";
+  const classInfo = className || profile.class_name || "-";
 
   function renderLessonCard(lesson: Lesson, compact = false) {
     const current = isCurrentLesson(lesson.start_time, lesson.end_time);
@@ -78,6 +85,40 @@ export default function HomeTab({
     );
   }
 
+  function renderTopTeachersCard() {
+    if (profile.role === "teacher") {
+      return (
+        <div className="info-stat-card">
+          <div className="info-stat-label">Fan</div>
+          <div className="info-stat-value small-value">{subjectInfo}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="info-stat-card">
+        <div className="info-stat-label">TOP o‘qituvchilar</div>
+
+        {topTeachers.length === 0 ? (
+          <div className="info-stat-value small-value">Hali reyting yo‘q</div>
+        ) : (
+          <div className="top-teachers-mini-list">
+            {topTeachers.slice(0, 3).map((teacher, index) => (
+              <div className="top-teacher-mini-row" key={`${teacher.teacher_name}-${index}`}>
+                <span className="top-teacher-mini-name">
+                  {index + 1}. {teacher.teacher_name}
+                </span>
+                <span className="top-teacher-mini-score">
+                  {Number(teacher.avg_score || 0).toFixed(1)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="main-hero">
@@ -112,7 +153,8 @@ export default function HomeTab({
               <div className="main-profile-name">{profile.selected_name}</div>
               <div className="main-profile-role">{roleLabel}</div>
               <div className="main-profile-average">{studentAverageGradeText}</div>
-              <div className="main-profile-subinfo">{subInfo}</div>
+              {profile.role !== "teacher" && <div className="profile-class-line">{classInfo}</div>}
+              {profile.role === "teacher" && <div className="main-profile-subinfo">{subjectInfo}</div>}
             </div>
 
             <div className="main-avatar-ring">
@@ -132,10 +174,7 @@ export default function HomeTab({
           <div className="info-stat-value small-value">{dayStatus}</div>
         </div>
 
-        <div className="info-stat-card">
-          <div className="info-stat-label">Sinf / Fan</div>
-          <div className="info-stat-value">{subInfo}</div>
-        </div>
+        {renderTopTeachersCard()}
       </div>
 
       <div className="big-section-card next-lesson-card">

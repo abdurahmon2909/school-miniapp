@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import gspread
 from fastapi import FastAPI, HTTPException
@@ -21,17 +22,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-
-app = FastAPI(title="School Mini App Backend")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+TZ = ZoneInfo("Asia/Tashkent")
 
 WEEKDAY_MAP = {
     "Monday": "Dushanba",
@@ -44,8 +35,19 @@ WEEKDAY_MAP = {
 }
 
 
+app = FastAPI(title="School Mini App Backend")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 def now_local() -> datetime:
-    return datetime.now()
+    return datetime.now(TZ)
 
 
 def today_weekday_uz() -> str:
@@ -56,25 +58,16 @@ def today_iso() -> str:
     return now_local().strftime("%Y-%m-%d")
 
 
+def now_str() -> str:
+    return now_local().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def normalize(value: Any) -> str:
     return str(value or "").strip()
 
 
 def normalize_lower(value: Any) -> str:
     return normalize(value).lower()
-
-
-def split_teachers(raw: str) -> list[str]:
-    value = normalize(raw)
-    if not value:
-        return []
-
-    parts = []
-    for chunk in value.replace(";", ",").split(","):
-        item = chunk.strip()
-        if item:
-            parts.append(item)
-    return parts
 
 
 def to_bool(value: Any, default: bool = False) -> bool:
@@ -84,6 +77,22 @@ def to_bool(value: Any, default: bool = False) -> bool:
     if text in {"0", "false", "no", "yoq", "yo'q", "off", "inactive"}:
         return False
     return default
+
+
+def to_int(value: Any, default: int = 0) -> int:
+    text = normalize(value)
+    if text.isdigit():
+        return int(text)
+    try:
+        return int(float(text))
+    except Exception:
+        return default
+
+
+def split_teachers_from_row(row: dict[str, Any]) -> list[str]:
+    t1 = normalize(row.get("teacher_1"))
+    t2 = normalize(row.get("teacher_2"))
+    return [t for t in [t1, t2] if t]
 
 
 @lru_cache(maxsize=1)
@@ -102,8 +111,7 @@ def get_spreadsheet():
     try:
         credentials = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
         gc = gspread.authorize(credentials)
-        spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
-        return spreadsheet
+        return gc.open_by_key(GOOGLE_SHEET_ID)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Google Sheet ulanish xatosi: {e}")
 
@@ -131,14 +139,16 @@ def find_registration_by_telegram_id(telegram_id: int) -> dict[str, Any] | None:
     return None
 
 
-def get_next_poll_id() -> int:
-    rows = get_all_records("poll_answers")
+def get_next_id(ws_name: str, id_column: str) -> int:
+    rows = get_all_records(ws_name)
     max_id = 0
     for row in rows:
-        raw = normalize(row.get("id"))
-        if raw.isdigit():
-            max_id = max(max_id, int(raw))
+        max_id = max(max_id, to_int(row.get(id_column), 0))
     return max_id + 1
+
+
+def is_poll_allowed_for_row(row: dict[str, Any]) -> bool:
+    return to_bool(row.get("poll_allowed"), default=True)
 
 
 def get_today_lessons_for_student(class_name: str) -> list[dict[str, Any]]:
@@ -152,16 +162,14 @@ def get_today_lessons_for_student(class_name: str) -> list[dict[str, Any]]:
         if normalize(row.get("weekday")) != weekday:
             continue
 
-        teachers = split_teachers(row.get("teacher_name", ""))
-
         lessons.append(
             {
-                "poll_id": int(normalize(row.get("id")) or "0"),
-                "lesson_number": int(normalize(row.get("lesson_number")) or "0"),
+                "lesson_number": to_int(row.get("lesson_number")),
                 "start_time": normalize(row.get("start_time")),
                 "end_time": normalize(row.get("end_time")),
                 "subject_name": normalize(row.get("subject_name")),
-                "teachers": teachers,
+                "teachers": split_teachers_from_row(row),
+                "poll_allowed": is_poll_allowed_for_row(row),
             }
         )
 
@@ -178,19 +186,19 @@ def get_today_lessons_for_teacher(teacher_name: str) -> list[dict[str, Any]]:
         if normalize(row.get("weekday")) != weekday:
             continue
 
-        teachers = split_teachers(row.get("teacher_name", ""))
+        teachers = split_teachers_from_row(row)
         if teacher_name not in teachers:
             continue
 
         lessons.append(
             {
-                "poll_id": int(normalize(row.get("id")) or "0"),
-                "lesson_number": int(normalize(row.get("lesson_number")) or "0"),
+                "lesson_number": to_int(row.get("lesson_number")),
                 "start_time": normalize(row.get("start_time")),
                 "end_time": normalize(row.get("end_time")),
                 "subject_name": normalize(row.get("subject_name")),
                 "teachers": teachers,
                 "class_name": normalize(row.get("class_name")),
+                "poll_allowed": False,
             }
         )
 
@@ -198,22 +206,191 @@ def get_today_lessons_for_teacher(teacher_name: str) -> list[dict[str, Any]]:
     return lessons
 
 
-def get_today_ratings_for_user(telegram_id: int) -> list[dict[str, Any]]:
-    rows = get_all_records("poll_answers")
+def get_today_poll_sessions_for_user(telegram_id: int) -> list[dict[str, Any]]:
+    rows = get_all_records("poll_sessions")
     today = today_iso()
 
     result = []
     for row in rows:
         if normalize(row.get("telegram_id")) != str(telegram_id):
             continue
-        if normalize(row.get("date")) != today:
+        if normalize(row.get("poll_date")) != today:
             continue
         result.append(row)
     return result
 
 
-def is_poll_allowed() -> bool:
-    return True
+def get_poll_answers_by_poll_ids(poll_ids: set[int]) -> list[dict[str, Any]]:
+    if not poll_ids:
+        return []
+
+    rows = get_all_records("poll_answers")
+    result = []
+    for row in rows:
+        if to_int(row.get("poll_id")) in poll_ids:
+            result.append(row)
+    return result
+
+
+def find_existing_poll_session(
+    telegram_id: int,
+    class_name: str,
+    subject_name: str,
+    lesson_number: int,
+    teacher_name: str,
+    selected_name: str,
+) -> dict[str, Any] | None:
+    rows = get_all_records("poll_sessions")
+    today = today_iso()
+
+    for row in rows:
+        if normalize(row.get("telegram_id")) != str(telegram_id):
+            continue
+        if normalize(row.get("poll_date")) != today:
+            continue
+        if normalize(row.get("class_name")) != class_name:
+            continue
+        if normalize(row.get("subject_name")) != subject_name:
+            continue
+        if to_int(row.get("lesson_number")) != lesson_number:
+            continue
+
+        teachers = [
+            normalize(row.get("teacher_1")),
+            normalize(row.get("teacher_2")),
+        ]
+        if teacher_name not in teachers:
+            continue
+
+        if selected_name and normalize(row.get("selected_name")) not in {"", selected_name}:
+            continue
+
+        return row
+
+    return None
+
+
+def create_poll_session(
+    telegram_id: int,
+    selected_name: str,
+    class_name: str,
+    subject_name: str,
+    teacher_1: str,
+    teacher_2: str,
+    lesson_number: int,
+) -> int:
+    ws = safe_ws("poll_sessions")
+    poll_id = get_next_id("poll_sessions", "poll_id")
+    created_at = now_str()
+    poll_date = today_iso()
+    end_time = f"{poll_date} 23:59:59"
+
+    ws.append_row(
+        [
+            poll_id,
+            telegram_id,
+            selected_name,
+            class_name,
+            poll_date,
+            subject_name,
+            teacher_1,
+            teacher_2,
+            lesson_number,
+            created_at,
+            end_time,
+            "active",
+        ],
+        value_input_option="USER_ENTERED",
+    )
+
+    return poll_id
+
+
+def update_teacher_rating_summary(teacher_name: str) -> None:
+    answers_rows = get_all_records("poll_answers")
+
+    total_votes = 0
+    score_sum = 0
+
+    for row in answers_rows:
+        if normalize(row.get("chosen_teacher")) != teacher_name:
+            continue
+
+        score = to_int(row.get("score_value"), 0)
+        if score < 1 or score > 10:
+            continue
+
+        total_votes += 1
+        score_sum += score
+
+    avg_score = round(score_sum / total_votes, 2) if total_votes > 0 else 0
+    last_updated = now_str()
+
+    ws = safe_ws("teacher_rating_summary")
+    rows = ws.get_all_records()
+
+    existing_row_index = None
+    for idx, row in enumerate(rows, start=2):
+        if normalize(row.get("teacher_name")) == teacher_name:
+            existing_row_index = idx
+            break
+
+    values = [
+        teacher_name,
+        avg_score,
+        total_votes,
+        last_updated,
+    ]
+
+    if existing_row_index:
+        ws.update(f"A{existing_row_index}:D{existing_row_index}", [values])
+    else:
+        ws.append_row(values, value_input_option="USER_ENTERED")
+
+
+def append_teacher_feedback(
+    poll_id: int,
+    teacher_name: str,
+    score_value: int,
+    anonymous_comment: str,
+) -> None:
+    comment = normalize(anonymous_comment)
+    if not comment:
+        return
+
+    ws = safe_ws("teacher_feedback")
+    feedback_id = get_next_id("teacher_feedback", "feedback_id")
+
+    ws.append_row(
+        [
+            feedback_id,
+            poll_id,
+            teacher_name,
+            score_value,
+            comment,
+            now_str(),
+        ],
+        value_input_option="USER_ENTERED",
+    )
+
+
+def get_teacher_rating_summary_map() -> dict[str, dict[str, Any]]:
+    rows = get_all_records("teacher_rating_summary")
+    result: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        teacher_name = normalize(row.get("teacher_name"))
+        if not teacher_name:
+            continue
+
+        result[teacher_name] = {
+            "teacher_name": teacher_name,
+            "avg_score": float(normalize(row.get("avg_score")) or 0),
+            "total_votes": to_int(row.get("total_votes"), 0),
+            "last_updated": normalize(row.get("last_updated")),
+        }
+
+    return result
 
 
 class TelegramIdRequest(BaseModel):
@@ -228,6 +405,7 @@ class SubmitRatingRequest(BaseModel):
     score_value: int = Field(ge=1, le=10)
     anonymous_comment: str = ""
     opened_at: str = ""
+    answered_at: str = ""
 
 
 class RegisterProfileRequest(BaseModel):
@@ -248,7 +426,13 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "time": now_str()}
+
+
+@app.get("/debug/sheets")
+def debug_sheets():
+    titles = [ws.title for ws in get_spreadsheet().worksheets()]
+    return {"ok": True, "sheets": titles}
 
 
 @app.post("/profile")
@@ -272,6 +456,15 @@ def profile(payload: TelegramIdRequest):
         "last_name": normalize(row.get("last_name")),
     }
 
+    if profile_data["role"] == "teacher":
+        summary_map = get_teacher_rating_summary_map()
+        profile_data["rating"] = summary_map.get(
+            profile_data["selected_name"],
+            {"teacher_name": profile_data["selected_name"], "avg_score": 0, "total_votes": 0, "last_updated": ""},
+        )
+    else:
+        profile_data["rating"] = None
+
     return {
         "registered": True,
         "profile": profile_data,
@@ -287,16 +480,16 @@ def registration_options():
     students: list[dict[str, str]] = []
 
     for row in students_rows:
-        name = normalize(row.get("name"))
+        full_name = normalize(row.get("full_name"))
         class_name = normalize(row.get("class_name"))
 
-        if not name or not class_name:
+        if not full_name or not class_name:
             continue
 
         classes_set.add(class_name)
         students.append(
             {
-                "name": name,
+                "name": full_name,
                 "class_name": class_name,
             }
         )
@@ -305,17 +498,18 @@ def registration_options():
     teachers: list[dict[str, str]] = []
 
     for row in teachers_rows:
-        name = normalize(row.get("name"))
-        subject_name = normalize(row.get("subject_name"))
+        teacher_name = normalize(row.get("teacher_name"))
+        subject_name = normalize(row.get("subject"))
 
-        if not name or not subject_name:
+        if not teacher_name or not subject_name:
             continue
 
         subjects_set.add(subject_name)
         teachers.append(
             {
-                "name": name,
+                "name": teacher_name,
                 "subject_name": subject_name,
+                "telegram_id": normalize(row.get("telegram_id")),
             }
         )
 
@@ -355,8 +549,6 @@ def register_profile(payload: RegisterProfileRequest):
             existing_row_index = idx
             break
 
-    now_str = now_local().strftime("%Y-%m-%d %H:%M:%S")
-
     values = [
         str(payload.telegram_id),
         normalize(payload.first_name),
@@ -366,7 +558,7 @@ def register_profile(payload: RegisterProfileRequest):
         selected_name,
         class_name,
         subject_name,
-        now_str,
+        now_str(),
     ]
 
     if existing_row_index:
@@ -374,27 +566,25 @@ def register_profile(payload: RegisterProfileRequest):
     else:
         ws.append_row(values, value_input_option="USER_ENTERED")
 
-    profile_data = {
-        "telegram_id": payload.telegram_id,
-        "role": role,
-        "selected_name": selected_name,
-        "class_name": class_name,
-        "subject_name": subject_name,
-        "username": normalize(payload.username),
-        "first_name": normalize(payload.first_name),
-        "last_name": normalize(payload.last_name),
-    }
-
     return {
         "ok": True,
-        "profile": profile_data,
+        "profile": {
+            "telegram_id": payload.telegram_id,
+            "role": role,
+            "selected_name": selected_name,
+            "class_name": class_name,
+            "subject_name": subject_name,
+            "username": normalize(payload.username),
+            "first_name": normalize(payload.first_name),
+            "last_name": normalize(payload.last_name),
+        },
     }
 
 
 @app.get("/announcements")
 def announcements():
     rows = get_all_records("announcements")
-    today_str = today_iso()
+    today = today_iso()
 
     result = []
     for row in rows:
@@ -402,34 +592,30 @@ def announcements():
         if not text:
             continue
 
-        is_active = to_bool(row.get("is_active"), default=True)
-        if not is_active:
+        if not to_bool(row.get("is_active"), default=True):
             continue
 
         starts_at = normalize(row.get("starts_at"))
         ends_at = normalize(row.get("ends_at"))
-        sort_order = normalize(row.get("sort_order")) or "9999"
+        sort_order = to_int(row.get("sort_order"), 9999)
 
-        if starts_at and today_str < starts_at:
+        if starts_at and today < starts_at:
             continue
-        if ends_at and today_str > ends_at:
+        if ends_at and today > ends_at:
             continue
 
         result.append(
             {
-                "id": normalize(row.get("id")) or "",
+                "id": normalize(row.get("id")),
                 "text": text,
-                "_sort_order": int(sort_order) if sort_order.isdigit() else 9999,
+                "_sort_order": sort_order,
             }
         )
 
     result.sort(key=lambda x: x["_sort_order"])
 
     return {
-        "announcements": [
-            {"id": item["id"], "text": item["text"]}
-            for item in result
-        ]
+        "announcements": [{"id": r["id"], "text": r["text"]} for r in result]
     }
 
 
@@ -451,49 +637,64 @@ def today_lessons(payload: TelegramIdRequest):
         if not selected_name:
             raise HTTPException(status_code=400, detail="O‘qituvchi nomi topilmadi")
         base_lessons = get_today_lessons_for_teacher(selected_name)
-        class_name = class_name or "-"
     else:
         raise HTTPException(status_code=400, detail="Noto‘g‘ri role")
 
-    today_user_ratings = get_today_ratings_for_user(payload.telegram_id)
+    rated_teachers_by_lesson: dict[tuple[int, str], list[str]] = {}
+
+    if role == "student":
+        sessions = get_today_poll_sessions_for_user(payload.telegram_id)
+        poll_ids = {to_int(s.get("poll_id")) for s in sessions}
+        answers = get_poll_answers_by_poll_ids(poll_ids)
+
+        sessions_map: dict[int, dict[str, Any]] = {
+            to_int(s.get("poll_id")): s for s in sessions
+        }
+
+        for answer in answers:
+            poll_id = to_int(answer.get("poll_id"))
+            session = sessions_map.get(poll_id)
+            if not session:
+                continue
+
+            lesson_number = to_int(session.get("lesson_number"))
+            subject_name = normalize(session.get("subject_name"))
+            chosen_teacher = normalize(answer.get("chosen_teacher"))
+
+            key = (lesson_number, subject_name)
+            rated_teachers_by_lesson.setdefault(key, [])
+            if chosen_teacher and chosen_teacher not in rated_teachers_by_lesson[key]:
+                rated_teachers_by_lesson[key].append(chosen_teacher)
 
     result_lessons = []
     for lesson in base_lessons:
-        lesson_number = lesson.get("lesson_number")
+        lesson_number = to_int(lesson.get("lesson_number"))
         subject_name = normalize(lesson.get("subject_name"))
         teachers = lesson.get("teachers", [])
 
-        matching_ratings = []
-        for rating in today_user_ratings:
-            if int(normalize(rating.get("lesson_number")) or "0") != int(lesson_number or 0):
-                continue
-            if normalize(rating.get("subject_name")) != subject_name:
-                continue
-            matching_ratings.append(rating)
-
-        rated_teachers = [
-            normalize(r.get("teacher_name"))
-            for r in matching_ratings
-            if normalize(r.get("teacher_name"))
-        ]
+        rated_teachers = rated_teachers_by_lesson.get((lesson_number, subject_name), [])
         rated = len(rated_teachers) > 0
 
-        result_lessons.append(
-            {
-                "poll_id": int(lesson.get("poll_id") or 0),
-                "lesson_number": int(lesson_number or 0),
-                "start_time": normalize(lesson.get("start_time")),
-                "end_time": normalize(lesson.get("end_time")),
-                "subject_name": subject_name,
-                "teachers": teachers,
-                "rated": rated,
-                "rated_teachers": rated_teachers,
-                "poll_allowed": is_poll_allowed() if role == "student" else False,
-            }
-        )
+        item = {
+            "lesson_number": lesson_number,
+            "start_time": normalize(lesson.get("start_time")),
+            "end_time": normalize(lesson.get("end_time")),
+            "subject_name": subject_name,
+            "teachers": teachers,
+            "rated": rated,
+            "rated_teachers": rated_teachers,
+            "poll_allowed": bool(lesson.get("poll_allowed")) if role == "student" else False,
+        }
+
+        if role == "teacher":
+            item["class_name"] = normalize(lesson.get("class_name"))
+
+        result_lessons.append(item)
 
     return {
         "telegram_id": payload.telegram_id,
+        "role": role,
+        "selected_name": selected_name,
         "class_name": class_name,
         "date": today_iso(),
         "weekday": today_weekday_uz(),
@@ -511,62 +712,166 @@ def submit_rating(payload: SubmitRatingRequest):
     if role != "student":
         raise HTTPException(status_code=403, detail="Faqat o‘quvchi baho bera oladi")
 
-    student_name = normalize(registration.get("selected_name"))
+    selected_name = normalize(registration.get("selected_name"))
     class_name = normalize(registration.get("class_name"))
-    teacher_name = normalize(payload.teacher_name)
     subject_name = normalize(payload.subject_name)
+    teacher_name = normalize(payload.teacher_name)
 
-    if not teacher_name:
-        raise HTTPException(status_code=400, detail="teacher_name majburiy")
+    if not class_name:
+        raise HTTPException(status_code=400, detail="class_name topilmadi")
 
     if not subject_name:
         raise HTTPException(status_code=400, detail="subject_name majburiy")
 
-    if not is_poll_allowed():
-        raise HTTPException(status_code=400, detail="Baholash vaqti yopilgan")
+    if not teacher_name:
+        raise HTTPException(status_code=400, detail="teacher_name majburiy")
 
-    ws = safe_ws("poll_answers")
-    rows = ws.get_all_records()
-    today_str = today_iso()
+    today_lessons = get_today_lessons_for_student(class_name)
 
-    for row in rows:
+    target_lesson = None
+    for lesson in today_lessons:
+        if to_int(lesson.get("lesson_number")) != payload.lesson_number:
+            continue
+        if normalize(lesson.get("subject_name")) != subject_name:
+            continue
+        if teacher_name not in lesson.get("teachers", []):
+            continue
+        target_lesson = lesson
+        break
+
+    if not target_lesson:
+        raise HTTPException(status_code=400, detail="Bugungi darsdan mos teacher topilmadi")
+
+    if not bool(target_lesson.get("poll_allowed")):
+        raise HTTPException(status_code=400, detail="Bu dars uchun baholash o‘chiq emas")
+
+    existing_session = find_existing_poll_session(
+        telegram_id=payload.telegram_id,
+        class_name=class_name,
+        subject_name=subject_name,
+        lesson_number=payload.lesson_number,
+        teacher_name=teacher_name,
+        selected_name=selected_name,
+    )
+
+    if existing_session:
+        poll_id = to_int(existing_session.get("poll_id"))
+    else:
+        teachers = target_lesson.get("teachers", [])
+        teacher_1 = teachers[0] if len(teachers) > 0 else ""
+        teacher_2 = teachers[1] if len(teachers) > 1 else ""
+        poll_id = create_poll_session(
+            telegram_id=payload.telegram_id,
+            selected_name=selected_name,
+            class_name=class_name,
+            subject_name=subject_name,
+            teacher_1=teacher_1,
+            teacher_2=teacher_2,
+            lesson_number=payload.lesson_number,
+        )
+
+    answers_rows = get_all_records("poll_answers")
+    for row in answers_rows:
+        if to_int(row.get("poll_id")) != poll_id:
+            continue
         if normalize(row.get("telegram_id")) != str(payload.telegram_id):
             continue
-        if normalize(row.get("date")) != today_str:
+        if normalize(row.get("chosen_teacher")) != teacher_name:
             continue
-        if int(normalize(row.get("lesson_number")) or "0") != payload.lesson_number:
-            continue
-        if normalize(row.get("subject_name")) != subject_name:
-            continue
-        if normalize(row.get("teacher_name")) != teacher_name:
-            continue
+        raise HTTPException(status_code=400, detail="Bu o‘qituvchi allaqachon baholangan")
 
-        raise HTTPException(status_code=400, detail="Bu o‘qituvchi bugun allaqachon baholangan")
+    answer_id = get_next_id("poll_answers", "answer_id")
 
-    next_id = get_next_poll_id()
-    created_at = now_local().strftime("%Y-%m-%d %H:%M:%S")
+    opened_at = normalize(payload.opened_at)
+    answered_at = normalize(payload.answered_at) or now_str()
 
-    ws.append_row(
+    response_seconds = 0
+    if opened_at:
+        try:
+            dt_open = datetime.strptime(opened_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ)
+            dt_ans = datetime.strptime(answered_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ)
+            response_seconds = max(0, int((dt_ans - dt_open).total_seconds()))
+        except Exception:
+            response_seconds = 0
+
+    safe_ws("poll_answers").append_row(
         [
-            next_id,
+            answer_id,
+            poll_id,
             payload.telegram_id,
-            student_name,
             class_name,
-            payload.lesson_number,
             subject_name,
+            "manual",
             teacher_name,
             payload.score_value,
             normalize(payload.anonymous_comment),
-            normalize(payload.opened_at),
-            created_at,
-            today_str,
+            opened_at,
+            answered_at,
+            response_seconds,
         ],
         value_input_option="USER_ENTERED",
     )
 
+    append_teacher_feedback(
+        poll_id=poll_id,
+        teacher_name=teacher_name,
+        score_value=payload.score_value,
+        anonymous_comment=payload.anonymous_comment,
+    )
+
+    update_teacher_rating_summary(teacher_name)
+
     return {
         "ok": True,
         "message": "Baholash saqlandi",
+        "poll_id": poll_id,
+        "answer_id": answer_id,
+        "teacher_rating_updated": True,
+    }
+
+
+@app.get("/top-teachers")
+def top_teachers(limit: int = 5):
+    rows = get_all_records("teacher_rating_summary")
+
+    items = []
+    for row in rows:
+        teacher_name = normalize(row.get("teacher_name"))
+        if not teacher_name:
+            continue
+
+        items.append(
+            {
+                "teacher_name": teacher_name,
+                "avg_score": float(normalize(row.get("avg_score")) or 0),
+                "total_votes": to_int(row.get("total_votes"), 0),
+                "last_updated": normalize(row.get("last_updated")),
+            }
+        )
+
+    items.sort(key=lambda x: (-x["avg_score"], -x["total_votes"], x["teacher_name"]))
+    return {
+        "top_teachers": items[: max(1, min(limit, 20))]
+    }
+
+
+@app.get("/teacher-rating")
+def teacher_rating(teacher_name: str):
+    teacher_name = normalize(teacher_name)
+    if not teacher_name:
+        raise HTTPException(status_code=400, detail="teacher_name majburiy")
+
+    summary_map = get_teacher_rating_summary_map()
+    return {
+        "teacher": summary_map.get(
+            teacher_name,
+            {
+                "teacher_name": teacher_name,
+                "avg_score": 0,
+                "total_votes": 0,
+                "last_updated": "",
+            },
+        )
     }
 
 

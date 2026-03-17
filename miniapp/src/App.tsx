@@ -24,6 +24,18 @@ const TODAY_LESSONS_ENDPOINT = `${BACKEND_URL}/today-lessons`;
 const RATE_ENDPOINT = `${BACKEND_URL}/submit-rating`;
 const PROFILE_ENDPOINT = `${BACKEND_URL}/profile`;
 const ANNOUNCEMENTS_ENDPOINT = `${BACKEND_URL}/announcements`;
+const TOP_TEACHERS_ENDPOINT = `${BACKEND_URL}/top-teachers`;
+
+type TopTeacher = {
+  teacher_name: string;
+  avg_score: number;
+  total_votes: number;
+  last_updated?: string;
+};
+
+type TopTeachersResponse = {
+  top_teachers?: TopTeacher[];
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
@@ -46,6 +58,7 @@ export default function App() {
   const [profile, setProfile] = useState<RegistrationProfile | null>(null);
 
   const [remoteAnnouncements, setRemoteAnnouncements] = useState<string[]>([]);
+  const [topTeachers, setTopTeachers] = useState<TopTeacher[]>([]);
 
   const tgUser = getTelegramUser();
   const photoUrl = getTelegramPhoto();
@@ -82,6 +95,7 @@ export default function App() {
     if (!profile || !telegramId) return;
     void loadTodayLessons();
     void loadAnnouncements();
+    void loadTopTeachers();
 
     return () => {
       if (toastTimerRef.current) {
@@ -190,6 +204,24 @@ export default function App() {
     }
   }
 
+  async function loadTopTeachers() {
+    try {
+      const response = await fetch(TOP_TEACHERS_ENDPOINT, {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        setTopTeachers([]);
+        return;
+      }
+
+      const json = (await response.json()) as TopTeachersResponse;
+      setTopTeachers(json?.top_teachers || []);
+    } catch {
+      setTopTeachers([]);
+    }
+  }
+
   async function loadTodayLessons() {
     try {
       setLoading(true);
@@ -287,6 +319,7 @@ export default function App() {
       closeRateModal();
       setActiveTab("home");
       await loadTodayLessons();
+      await loadTopTeachers();
       showToast("Baholash yuborildi");
     } catch (err: any) {
       showToast(err?.message || "Xatolik yuz berdi");
@@ -312,6 +345,7 @@ export default function App() {
             studentAverageGradeText={studentAverageGradeText}
             announcements={announcements}
             fakeZakovatTop={fakeZakovatTop}
+            topTeachers={topTeachers}
             onOpenSchedule={() => setActiveTab("schedule")}
           />
         );
