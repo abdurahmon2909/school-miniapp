@@ -8,7 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import gspread
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2.service_account import Credentials
 from pydantic import BaseModel, Field
@@ -89,6 +89,10 @@ def to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def normalize_phone(value: Any) -> str:
+    return normalize(value).replace(" ", "").replace("-", "")
+
+
 def split_teachers_from_row(row: dict[str, Any]) -> list[str]:
     t1 = normalize(row.get("teacher_1"))
     t2 = normalize(row.get("teacher_2"))
@@ -129,6 +133,126 @@ def safe_ws(title: str):
 def get_all_records(ws_name: str) -> list[dict[str, Any]]:
     ws = safe_ws(ws_name)
     return ws.get_all_records()
+
+
+def get_all_records_safe_headers(ws_name: str) -> list[dict[str, Any]]:
+    ws = safe_ws(ws_name)
+    values = ws.get_all_values()
+
+    if not values:
+        return []
+
+    headers = [normalize(h) for h in values[0]]
+    rows: list[dict[str, Any]] = []
+
+    for raw_row in values[1:]:
+        item: dict[str, Any] = {}
+        for i, header in enumerate(headers):
+            item[header] = raw_row[i] if i < len(raw_row) else ""
+        rows.append(item)
+
+    return rows
+
+
+def find_first_value(row: dict[str, Any], keys: list[str], default: str = "") -> str:
+    for key in keys:
+        value = normalize(row.get(key))
+        if value:
+            return value
+    return default
+
+
+def find_user_by_telegram_id_in_users(telegram_id: int) -> dict[str, Any] | None:
+    rows = get_all_records_safe_headers("users")
+    target = str(telegram_id).strip()
+
+    possible_id_keys = [
+        "telegram_id",
+        "Telegram ID",
+        "telegramId",
+        "tg_id",
+        "user_id",
+        "telegram user id",
+    ]
+
+    for row in rows:
+        for key in possible_id_keys:
+            if normalize(row.get(key)) == target:
+                return row
+
+    return None
+
+
+class RegistrationProfile(BaseModel):
+    telegram_id: int
+    full_name: str
+    role: str
+    class_name: str = ""
+    subject: str = ""
+    phone: str = ""
+    username: str = ""
+
+
+class MeResponse(BaseModel):
+    ok: bool
+    registered: bool
+    profile: RegistrationProfile | None = None
+
+
+def build_profile_from_users_row(row: dict[str, Any]) -> RegistrationProfile:
+    telegram_id_raw = find_first_value(
+        row,
+        ["telegram_id", "Telegram ID", "telegramId", "tg_id", "user_id"],
+        "0",
+    )
+
+    full_name = find_first_value(
+        row,
+        ["full_name", "name", "fio", "FIO", "ism_familiya", "selected_name"],
+        "",
+    )
+
+    role = find_first_value(
+        row,
+        ["role", "user_type", "type"],
+        "student",
+    ).lower()
+
+    class_name = find_first_value(
+        row,
+        ["class_name", "class", "sinf"],
+        "",
+    )
+
+    subject = find_first_value(
+        row,
+        ["subject", "subject_name", "fan"],
+        "",
+    )
+
+    phone = normalize_phone(
+        find_first_value(
+            row,
+            ["phone", "phone_number", "tel"],
+            "",
+        )
+    )
+
+    username = find_first_value(
+        row,
+        ["username", "telegram_username"],
+        "",
+    )
+
+    return RegistrationProfile(
+        telegram_id=to_int(telegram_id_raw, 0),
+        full_name=full_name,
+        role=role,
+        class_name=class_name,
+        subject=subject,
+        phone=phone,
+        username=username,
+    )
 
 
 def find_registration_by_telegram_id(telegram_id: int) -> dict[str, Any] | None:
@@ -435,6 +559,17 @@ def debug_sheets():
     return {"ok": True, "sheets": titles}
 
 
+@app.get("/me", response_model=MeResponse)
+def me(telegram_id: int = Query(..., description="Telegram foydalanuvchi IDsi")):
+    row = find_user_by_telegram_id_in_users(telegram_id)
+
+    if not row:
+        return MeResponse(ok=True, registered=False, profile=None)
+
+    profile = build_profile_from_users_row(row)
+    return MeResponse(ok=True, registered=True, profile=profile)
+
+
 @app.post("/profile")
 def profile(payload: TelegramIdRequest):
     row = find_registration_by_telegram_id(payload.telegram_id)
@@ -460,7 +595,12 @@ def profile(payload: TelegramIdRequest):
         summary_map = get_teacher_rating_summary_map()
         profile_data["rating"] = summary_map.get(
             profile_data["selected_name"],
-            {"teacher_name": profile_data["selected_name"], "avg_score": 0, "total_votes": 0, "last_updated": ""},
+            {
+                "teacher_name": profile_data["selected_name"],
+                "avg_score": 0,
+                "total_votes": 0,
+                "last_updated": "",
+            },
         )
     else:
         profile_data["rating"] = None
