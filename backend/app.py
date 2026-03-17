@@ -89,6 +89,16 @@ def to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def to_float(value: Any, default: float = 0.0) -> float:
+    text = normalize(value).replace(",", ".")
+    if not text:
+        return default
+    try:
+        return float(text)
+    except Exception:
+        return default
+
+
 def normalize_phone(value: Any) -> str:
     return normalize(value).replace(" ", "").replace("-", "")
 
@@ -269,6 +279,7 @@ def build_profile_from_users_row(row: dict[str, Any]) -> RegistrationProfile:
         username=username,
     )
 
+
 def find_registration_by_telegram_id(telegram_id: int) -> dict[str, Any] | None:
     rows = get_all_records("registrations")
     for row in rows:
@@ -287,6 +298,63 @@ def get_next_id(ws_name: str, id_column: str) -> int:
 
 def is_poll_allowed_for_row(row: dict[str, Any]) -> bool:
     return to_bool(row.get("poll_allowed"), default=True)
+
+
+def find_student_row(selected_name: str, class_name: str = "") -> dict[str, Any] | None:
+    rows = get_all_records_safe_headers("students_list")
+    selected_name_norm = normalize_lower(selected_name)
+    class_name_norm = normalize_lower(class_name)
+
+    for row in rows:
+        row_name = normalize_lower(
+            find_first_value(row, ["full_name", "name", "fio", "student_name"], "")
+        )
+        row_class = normalize_lower(
+            find_first_value(row, ["class_name", "class", "sinf"], "")
+        )
+
+        if not row_name:
+            continue
+
+        if row_name != selected_name_norm:
+            continue
+
+        if class_name_norm and row_class and row_class != class_name_norm:
+            continue
+
+        return row
+
+    return None
+
+
+def get_student_quarterly_average(selected_name: str, class_name: str = "") -> str:
+    row = find_student_row(selected_name, class_name)
+    if not row:
+        return "—"
+
+    raw_value = find_first_value(
+        row,
+        [
+            "quarterly_avarage",
+            "quarterly_average",
+            "quarter_average",
+            "average",
+            "avg",
+        ],
+        "",
+    )
+
+    if not raw_value:
+        return "—"
+
+    numeric = to_float(raw_value, -1)
+    if numeric < 0:
+        return raw_value
+
+    if float(numeric).is_integer():
+        return str(int(numeric))
+
+    return f"{numeric:.2f}".rstrip("0").rstrip(".")
 
 
 def get_today_lessons_for_student(class_name: str) -> list[dict[str, Any]]:
@@ -531,6 +599,50 @@ def get_teacher_rating_summary_map() -> dict[str, dict[str, Any]]:
     return result
 
 
+def get_user_context(telegram_id: int) -> dict[str, Any] | None:
+    registration = find_registration_by_telegram_id(telegram_id)
+    if registration:
+        role = normalize_lower(registration.get("role")) or "student"
+        selected_name = normalize(registration.get("selected_name"))
+        class_name = normalize(registration.get("class_name"))
+        subject_name = normalize(registration.get("subject_name"))
+        username = normalize(registration.get("username"))
+        first_name = normalize(registration.get("first_name"))
+        last_name = normalize(registration.get("last_name"))
+        full_name = selected_name or f"{first_name} {last_name}".strip()
+
+        return {
+            "source": "registrations",
+            "telegram_id": telegram_id,
+            "role": role,
+            "selected_name": selected_name or full_name,
+            "full_name": full_name or selected_name,
+            "class_name": class_name,
+            "subject_name": subject_name,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
+        }
+
+    user_row = find_user_by_telegram_id_in_users(telegram_id)
+    if user_row:
+        profile = build_profile_from_users_row(user_row)
+        return {
+            "source": "users",
+            "telegram_id": telegram_id,
+            "role": normalize_lower(profile.role) or "student",
+            "selected_name": profile.full_name,
+            "full_name": profile.full_name,
+            "class_name": profile.class_name,
+            "subject_name": profile.subject,
+            "username": profile.username,
+            "first_name": "",
+            "last_name": "",
+        }
+
+    return None
+
+
 class TelegramIdRequest(BaseModel):
     telegram_id: int
 
@@ -579,13 +691,44 @@ def me(telegram_id: int = Query(..., description="Telegram foydalanuvchi IDsi"))
         row = find_user_by_telegram_id_in_users(telegram_id)
 
         if not row:
+            context = get_user_context(telegram_id)
+            if not context:
+                return {
+                    "ok": True,
+                    "registered": False,
+                    "profile": None,
+                }
+
+            average_grade = (
+                get_student_quarterly_average(
+                    context["selected_name"],
+                    context["class_name"],
+                )
+                if context["role"] == "student"
+                else None
+            )
+
             return {
                 "ok": True,
-                "registered": False,
-                "profile": None,
+                "registered": True,
+                "profile": {
+                    "telegram_id": context["telegram_id"],
+                    "full_name": context["full_name"],
+                    "role": context["role"],
+                    "class_name": context["class_name"],
+                    "subject": context["subject_name"],
+                    "phone": "",
+                    "username": context["username"],
+                    "average_grade": average_grade,
+                },
             }
 
         profile = build_profile_from_users_row(row)
+        average_grade = (
+            get_student_quarterly_average(profile.full_name, profile.class_name)
+            if profile.role == "student"
+            else None
+        )
 
         return {
             "ok": True,
@@ -598,11 +741,13 @@ def me(telegram_id: int = Query(..., description="Telegram foydalanuvchi IDsi"))
                 "subject": profile.subject,
                 "phone": profile.phone,
                 "username": profile.username,
+                "average_grade": average_grade,
             },
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"/me xatolik: {type(e).__name__}: {e}")
+
 
 @app.get("/debug/env")
 def debug_env():
@@ -610,6 +755,7 @@ def debug_env():
         "google_sheet_id": GOOGLE_SHEET_ID,
         "google_sheet_id_length": len(GOOGLE_SHEET_ID),
     }
+
 
 @app.get("/debug/open-sheet")
 def debug_open_sheet():
@@ -622,6 +768,7 @@ def debug_open_sheet():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"/debug/open-sheet xatolik: {type(e).__name__}: {e}")
+
 
 @app.get("/debug/creds")
 def debug_creds():
@@ -640,25 +787,34 @@ def debug_creds():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"/debug/creds xatolik: {type(e).__name__}: {e}")
 
+
 @app.post("/profile")
 def profile(payload: TelegramIdRequest):
-    row = find_registration_by_telegram_id(payload.telegram_id)
+    context = get_user_context(payload.telegram_id)
 
-    if not row:
+    if not context:
         return {
             "registered": False,
             "profile": None,
         }
 
+    average_grade = (
+        get_student_quarterly_average(context["selected_name"], context["class_name"])
+        if context["role"] == "student"
+        else None
+    )
+
     profile_data = {
         "telegram_id": payload.telegram_id,
-        "role": normalize_lower(row.get("role")) or "student",
-        "selected_name": normalize(row.get("selected_name")),
-        "class_name": normalize(row.get("class_name")),
-        "subject_name": normalize(row.get("subject_name")),
-        "username": normalize(row.get("username")),
-        "first_name": normalize(row.get("first_name")),
-        "last_name": normalize(row.get("last_name")),
+        "role": context["role"],
+        "selected_name": context["selected_name"],
+        "full_name": context["full_name"],
+        "class_name": context["class_name"],
+        "subject_name": context["subject_name"],
+        "username": context["username"],
+        "first_name": context["first_name"],
+        "last_name": context["last_name"],
+        "average_grade": average_grade,
     }
 
     if profile_data["role"] == "teacher":
@@ -831,13 +987,13 @@ def announcements():
 
 @app.post("/today-lessons")
 def today_lessons(payload: TelegramIdRequest):
-    registration = find_registration_by_telegram_id(payload.telegram_id)
-    if not registration:
+    context = get_user_context(payload.telegram_id)
+    if not context:
         raise HTTPException(status_code=404, detail="Foydalanuvchi ro‘yxatdan o‘tmagan")
 
-    role = normalize_lower(registration.get("role"))
-    selected_name = normalize(registration.get("selected_name"))
-    class_name = normalize(registration.get("class_name"))
+    role = normalize_lower(context.get("role"))
+    selected_name = normalize(context.get("selected_name"))
+    class_name = normalize(context.get("class_name"))
 
     if role == "student":
         if not class_name:
@@ -901,29 +1057,35 @@ def today_lessons(payload: TelegramIdRequest):
 
         result_lessons.append(item)
 
-    return {
+    response = {
         "telegram_id": payload.telegram_id,
         "role": role,
         "selected_name": selected_name,
+        "full_name": normalize(context.get("full_name")),
         "class_name": class_name,
         "date": today_iso(),
         "weekday": today_weekday_uz(),
         "lessons": result_lessons,
     }
 
+    if role == "student":
+        response["average_grade"] = get_student_quarterly_average(selected_name, class_name)
+
+    return response
+
 
 @app.post("/submit-rating")
 def submit_rating(payload: SubmitRatingRequest):
-    registration = find_registration_by_telegram_id(payload.telegram_id)
-    if not registration:
+    context = get_user_context(payload.telegram_id)
+    if not context:
         raise HTTPException(status_code=404, detail="Foydalanuvchi ro‘yxatdan o‘tmagan")
 
-    role = normalize_lower(registration.get("role"))
+    role = normalize_lower(context.get("role"))
     if role != "student":
         raise HTTPException(status_code=403, detail="Faqat o‘quvchi baho bera oladi")
 
-    selected_name = normalize(registration.get("selected_name"))
-    class_name = normalize(registration.get("class_name"))
+    selected_name = normalize(context.get("selected_name"))
+    class_name = normalize(context.get("class_name"))
     subject_name = normalize(payload.subject_name)
     teacher_name = normalize(payload.teacher_name)
 

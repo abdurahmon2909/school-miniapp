@@ -17,12 +17,14 @@ export type Lesson = {
 
 export type TodayLessonsResponse = {
   telegram_id: number;
-  role: UserRole;
-  selected_name?: string;
+  role: string;
+  selected_name: string;
+  full_name: string;
   class_name: string;
   date: string;
   weekday: string;
   lessons: Lesson[];
+  average_grade?: string | number;
 };
 
 export type TeacherRating = {
@@ -35,11 +37,12 @@ export type TeacherRating = {
 export type RegistrationProfile = {
   telegram_id: number;
   full_name: string;
-  role: UserRole;
+  role: string;
   class_name: string;
-  subject: string;
-  phone: string;
-  username: string;
+  subject?: string;
+  phone?: string;
+  username?: string;
+  average_grade?: string | number | null;
 };
 
 export type MeResponse = {

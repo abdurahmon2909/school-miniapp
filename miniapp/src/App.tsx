@@ -95,8 +95,18 @@ export default function App() {
 
   const lessons = useMemo(() => data?.lessons || [], [data]);
 
-  const studentAverageGradeText =
-    profile?.role === "teacher" ? "Reyting: —" : "O‘rtacha: —";
+  const studentAverageGradeText = useMemo(() => {
+    if (!profile) return "—";
+
+    if (profile.role === "teacher") {
+      return "—";
+    }
+
+    const avg = profile.average_grade ?? data?.average_grade ?? "—";
+    const avgText = String(avg).trim();
+
+    return avgText || "—";
+  }, [profile, data]);
 
   const fakeZakovatTop = useMemo(() => {
     const currentClass = data?.class_name || profile?.class_name || "8-A";
@@ -231,12 +241,19 @@ export default function App() {
       const json = await response.json();
 
       if (!response.ok) {
-        throw new Error(json?.detail || "Backend xatolik qaytardi");
+        const backendMessage = String(json?.detail || "").trim();
+
+        if (backendMessage === "Foydalanuvchi ro‘yxatdan o‘tmagan") {
+          throw new Error("Profil topilmadi. Botda ro‘yxatdan o‘tib, Mini App’ni qayta oching");
+        }
+
+        throw new Error(backendMessage || "Backend xatolik qaytardi");
       }
 
       setData(json);
     } catch (err: any) {
       setError(err?.message || "Failed to fetch");
+      setData(null);
     } finally {
       setLoading(false);
     }

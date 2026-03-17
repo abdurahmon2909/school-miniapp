@@ -62,8 +62,8 @@ export default function HomeTab({
 
   return (
     <>
-      <section className="main-hero">
-        <div className="main-hero-top">
+      <section className="main-hero compact-hero">
+        <div className="main-hero-top compact-hero-top">
           <div className="main-hero-left">
             <div className="main-school-id">155-Maktab</div>
             <div className="main-hero-title">School tizimi</div>
@@ -89,15 +89,17 @@ export default function HomeTab({
             </div>
           </div>
 
-          <div className="main-profile-short">
-            <div className="main-profile-text">
+          <div className="main-profile-short top-right-profile">
+            <div className="main-profile-text profile-text-right">
               <div className="main-profile-name">{profileName}</div>
               <div className="main-profile-role">{roleLabel}</div>
-              <div className="main-profile-average">{studentAverageGradeText}</div>
+              {profile.role !== "teacher" && (
+                <div className="main-profile-average">{studentAverageGradeText}</div>
+              )}
               <div className="main-profile-subinfo">{profileSubInfo}</div>
             </div>
 
-            <div className="main-avatar-ring">
+            <div className="main-avatar-ring compact-avatar-ring">
               <div className="main-avatar">
                 {photoUrl ? (
                   <img className="main-avatar-img" src={photoUrl} alt={profileName} />
@@ -110,7 +112,7 @@ export default function HomeTab({
         </div>
       </section>
 
-      <section className="stats-grid">
+      <section className="stats-grid single-stat-grid">
         <div className="info-stat-card">
           <div className="info-stat-label">Bugungi holat</div>
           <div className="info-stat-value small-value">
@@ -118,14 +120,19 @@ export default function HomeTab({
           </div>
         </div>
 
-        <div className="info-stat-card">
-          <div className="info-stat-label">
-            {profile.role === "teacher" ? "Fan" : "Sinf"}
-          </div>
-          <div className="info-stat-value small-value">
-            {profile.role === "teacher"
-              ? profile.subject || "-"
-              : className || profile.class_name || "-"}
+        <div className="info-stat-card compact-top-teachers-card">
+          <div className="info-stat-label">Top 5 Ustozlar</div>
+
+          <div className="top-teachers-inline-list">
+            {topTeachersToShow.slice(0, 5).map((item, index) => (
+              <div className="top-teacher-inline-row" key={`${item.name}-${index}`}>
+                <span className="top-teacher-inline-rank">{index + 1}.</span>
+                <span className="top-teacher-inline-name">{item.name}</span>
+                <span className="top-teacher-inline-score">
+                  {item.score > 0 ? item.score.toFixed(1) : "—"}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -218,21 +225,6 @@ export default function HomeTab({
               <div className="mini-list-row" key={`${item.class_name}-${index}`}>
                 <span>{item.class_name}</span>
                 <strong>{item.points}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="mini-info-card">
-          <div className="mini-info-title">TOP ustozlar</div>
-
-          <div className="top-teachers-mini-list">
-            {topTeachersToShow.map((item, index) => (
-              <div className="top-teacher-mini-row" key={`${item.name}-${index}`}>
-                <div className="top-teacher-mini-name">{item.name}</div>
-                <div className="top-teacher-mini-score">
-                  {item.score > 0 ? item.score.toFixed(1) : "—"}
-                </div>
               </div>
             ))}
           </div>
