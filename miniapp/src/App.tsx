@@ -4,7 +4,6 @@ import "./App.css";
 import HomeTab from "./components/HomeTab";
 import ProfileTab from "./components/ProfileTab";
 import RateModal from "./components/RateModal";
-import RegistrationGate from "./components/RegistrationGate";
 import ScheduleTab from "./components/ScheduleTab";
 import ZakovatTab from "./components/ZakovatTab";
 
@@ -63,8 +62,7 @@ export default function App() {
   const tgUser = getTelegramUser();
   const photoUrl = getTelegramPhoto();
 
-  const firstName = tgUser?.first_name || "Foydalanuvchi";
-  const lastName = tgUser?.last_name || "";
+
   const username = tgUser?.username || "";
   const telegramId = tgUser?.id;
 

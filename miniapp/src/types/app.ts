@@ -1,10 +1,9 @@
-// ===== Общие типы =====
-
 export type TabKey = "home" | "schedule" | "zakovat" | "profile";
 
-// ===== Урок =====
+export type UserRole = "student" | "teacher";
 
 export type Lesson = {
+  poll_id?: number;
   lesson_number: number;
   start_time: string;
   end_time: string;
@@ -15,19 +14,15 @@ export type Lesson = {
   poll_allowed: boolean;
 };
 
-// ===== Сегодняшние уроки =====
-
 export type TodayLessonsResponse = {
   telegram_id: number;
-  role: "student" | "teacher";
+  role: UserRole;
   selected_name: string;
   class_name: string;
   date: string;
   weekday: string;
   lessons: Lesson[];
 };
-
-// ===== Профиль =====
 
 export type TeacherRating = {
   teacher_name: string;
@@ -38,42 +33,38 @@ export type TeacherRating = {
 
 export type RegistrationProfile = {
   telegram_id: number;
-  role: "student" | "teacher";
+  role: UserRole;
   selected_name: string;
   class_name: string;
   subject_name: string;
   username: string;
   first_name: string;
   last_name: string;
-
-  // добавлено под рейтинг
   rating?: TeacherRating | null;
 };
-
-// ===== Ответ профиля =====
 
 export type RegistrationStatusResponse = {
   registered: boolean;
   profile: RegistrationProfile | null;
 };
 
-// ===== Регистрация =====
+export type StudentOption = {
+  name: string;
+  class_name: string;
+};
+
+export type TeacherOption = {
+  name: string;
+  subject_name: string;
+  telegram_id?: string;
+};
 
 export type RegistrationOptionsResponse = {
   classes: string[];
-  students: {
-    name: string;
-    class_name: string;
-  }[];
+  students: StudentOption[];
   subjects: string[];
-  teachers: {
-    name: string;
-    subject_name: string;
-    telegram_id?: string;
-  }[];
+  teachers: TeacherOption[];
 };
-
-// ===== Оценка =====
 
 export type SubmitRatingPayload = {
   telegram_id: number;
@@ -94,8 +85,6 @@ export type SubmitRatingResponse = {
   teacher_rating_updated?: boolean;
 };
 
-// ===== Объявления =====
-
 export type AnnouncementItem = {
   id: string;
   text: string;
@@ -104,8 +93,6 @@ export type AnnouncementItem = {
 export type AnnouncementsResponse = {
   announcements: AnnouncementItem[];
 };
-
-// ===== ТОП учителей =====
 
 export type TopTeacher = {
   teacher_name: string;
@@ -117,8 +104,6 @@ export type TopTeacher = {
 export type TopTeachersResponse = {
   top_teachers: TopTeacher[];
 };
-
-// ===== Рейтинг конкретного учителя =====
 
 export type TeacherRatingResponse = {
   teacher: TeacherRating;
